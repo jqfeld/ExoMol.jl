@@ -18,7 +18,7 @@ function add_crosssection!(trans, states)
     g1 = states[states.id.==row.lower_state, :g] |> only
     A21 = row.A
     wn = row.wavenumber
-    push!(σs, 1 / 4 /(wn * 100)^2 * g2 / g1 * A21 / 2 / π / c0)
+    push!(σs, (1 / 4) * (1/(wn * 100)^2) * (g2 / g1) * A21 / (2 * π * c0 * 100)) # σ in units m^2 cm^-1
   end
   trans.σ = σs
   trans
