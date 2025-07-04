@@ -6,6 +6,9 @@ function read_def_file(filename;)
   if endswith(filename, ".json")
     return JSON.parsefile(filename)
   end
+
+  error("Original ExoMol format not supported yet. Please use JSON format instead.")
+
   open(filename, "r") do f
     if !startswith(readline(f), "EXOMOL.def")
       error("Not a ExoMol definitions file")
