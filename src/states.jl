@@ -39,6 +39,3 @@ function read_state_file(filename, def_file=replace(filename, ".states" => ".def
   return identity.(states) # fix the eltype, not sure if helpful
 end
 
-# function lookup_state_id(id, states)
-#   filter(:ID => x -> x == id, states)
-# end
