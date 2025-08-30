@@ -4,12 +4,24 @@ authors = ["Jan Kuhfeld <jan.kuhfeld@rub.de> and contributors"]
 version = "1.0.0-DEV"
 
 [deps]
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 FixedWidthTables = "ef6c9296-b25d-482c-a0a7-898918678e13"
+Inflate = "d25df0c9-e2be-5dd7-82c8-3ad0b3e990b9"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
+Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 SafeTestsets = "1bc83da4-3b8d-516f-aca4-4fe02f6d838f"
 
 [compat]
+Dates = "1.11.0"
+Downloads = "1.6.0"
+Inflate = "0.1.5"
 JSON = "0.21.4"
+JSON3 = "1.14.3"
+Pkg = "1.11.0"
+Revise = "3.9.0"
 SafeTestsets = "0.1.0"
 julia = "1.6.7"
 

@@ -2,6 +2,11 @@ module ExoMol
 
 
 # include("constants.jl")
+
+export get_exomol_master
+include("download_database.jl")
+include("download_dataset.jl")
+
 include("definitions.jl")
 include("states.jl")
 include("transitions.jl")
