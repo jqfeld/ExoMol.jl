@@ -48,8 +48,6 @@ function get_exomol_dataset(molecule, isotopologue, dataset;
   # (returns `nothing` if no such binding exists)
   dataset_hash = artifact_hash(artifact_name, artifact_toml)
 
-  @info dataset_hash
-  @info artifact_exists(dataset_hash)
 
   # If the name was not bound, or the hash it was bound to does not exist, create it!
   if isnothing(dataset_hash) || !artifact_exists(dataset_hash) || force
