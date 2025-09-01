@@ -10,7 +10,7 @@ include("download_dataset.jl")
 include("definitions.jl")
 include("states.jl")
 include("transitions.jl")
-include("isotopes.jl")
+include("isotopologue.jl")
 
 
 
