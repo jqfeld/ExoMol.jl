@@ -1,4 +1,4 @@
-
+using CodecBzip2
 
 struct Transition
   upper_id::Int
@@ -8,16 +8,32 @@ struct Transition
 end
 
 function read_trans_file(filename)
+
   transitions = Vector{Transition}()
-  open(filename, "r") do io
-    for line in eachline(io)
-      strings = split(line)
-      push!(transitions, Transition(
-        parse(Int, strings[1]),
-        parse(Int, strings[2]),
-        parse(Float64, strings[3]),
-        parse(Float64, strings[4])
-      ))
+
+  if endswith(filename, ".bz2")
+    stream = Bzip2DecompressorStream(open(filename))
+    for line in eachline(stream)
+        strings = split(line)
+        push!(transitions, Transition(
+          parse(Int, strings[1]),
+          parse(Int, strings[2]),
+          parse(Float64, strings[3]),
+          parse(Float64, strings[4])
+        ))
+    end
+    close(stream)
+  else
+    open(filename, "r") do io
+      for line in eachline(io)
+        strings = split(line)
+        push!(transitions, Transition(
+          parse(Int, strings[1]),
+          parse(Int, strings[2]),
+          parse(Float64, strings[3]),
+          parse(Float64, strings[4])
+        ))
+      end
     end
   end
 

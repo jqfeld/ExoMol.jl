@@ -4,6 +4,7 @@ authors = ["Jan Kuhfeld <jan.kuhfeld@rub.de> and contributors"]
 version = "1.0.0-DEV"
 
 [deps]
+CodecBzip2 = "523fee87-0ab8-5b00-afb7-3ecf72e48cfd"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 FixedWidthTables = "ef6c9296-b25d-482c-a0a7-898918678e13"
@@ -15,6 +16,7 @@ Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 SafeTestsets = "1bc83da4-3b8d-516f-aca4-4fe02f6d838f"
 
 [compat]
+CodecBzip2 = "0.8.5"
 Dates = "1.11.0"
 Downloads = "1.6.0"
 Inflate = "0.1.5"

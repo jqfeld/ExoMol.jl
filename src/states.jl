@@ -14,9 +14,8 @@ end
 
 _parse_field(type, value) = type <: AbstractString ? value : parse(type, value)
 
-function read_state_file(filename, def_file=replace(filename, ".states" => ".def.json"); lifetime=true, Lande=false, state_qn=[])
+function read_state_file(filename, def=read_def_file(replace(filename, r".states(.bz2)" => ".def.json")))
 
-  def = read_def_file(def_file)
   states_def = def["dataset"]["states"]
 
   field_names = String[]
@@ -27,12 +26,27 @@ function read_state_file(filename, def_file=replace(filename, ".states" => ".def
   end
 
   states = Vector{Any}()
-  open(filename, "r") do io
-    for line in eachline(io)
+
+  if endswith(filename, ".bz2")
+
+    stream = Bzip2DecompressorStream(open(filename))
+    for line in eachline(stream)
       strings = split(line)
       @assert length(strings) == length(field_names)
-      state = (;(Symbol.(field_names) .=> _parse_field.(field_types, strings))...)
+      state = (; (Symbol.(field_names) .=> _parse_field.(field_types, strings))...)
       push!(states, state)
+    end
+    close(stream)
+
+  else
+
+    open(filename, "r") do io
+      for line in eachline(io)
+        strings = split(line)
+        @assert length(strings) == length(field_names)
+        state = (; (Symbol.(field_names) .=> _parse_field.(field_types, strings))...)
+        push!(states, state)
+      end
     end
   end
 
