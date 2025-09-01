@@ -1,13 +1,13 @@
 using CodecBzip2
 
 
-struct Isotope{S}
+struct Isotopologue{S}
   definitions::Dict
   states::Vector{S}
   transitions::Vector{Transition}
 end
 
-function load_isotope(folder)
+function load_isotopologue(folder)
 
   files = joinpath.(folder, readdir(folder))
 
@@ -33,6 +33,6 @@ function load_isotope(folder)
     end
   end
 
-  return Isotope(def, states, transitions)
+  return Isotopologue(def, states, transitions)
 end
 
