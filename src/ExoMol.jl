@@ -1,3 +1,11 @@
+"""
+    ExoMol
+
+Utilities for downloading and parsing spectroscopic line lists from the
+ExoMol project. The module exposes helpers to obtain the master
+catalogue, download specific isotopologue datasets, and load state and
+transition information into convenient Julia structures.
+"""
 module ExoMol
 
 

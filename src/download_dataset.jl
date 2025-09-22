@@ -1,40 +1,37 @@
-using JSON
 using Downloads
 
-
-
-
 """
-    get_exomol_dataset(molecule::String, isotopologue::String, dataset::String; 
-                           force::Bool=false, cache_dir::Union{String,Nothing}=nothing)
+    get_exomol_dataset(molecule::AbstractString,
+                       isotopologue::AbstractString,
+                       dataset::AbstractString;
+                       force::Bool=false,
+                       verbose::Bool=false)
 
-Download a specific ExoMol dataset definition file as an artifact.
+Download an ExoMol dataset bundle (definition, states, and transitions
+files) and cache it as an artifact.
 
 # Arguments
-- `molecule::String`: Molecule formula (e.g., "H2O", "CO2", "N2")
-- `isotopologue::String`: Isotopologue identifier (e.g., "1H2-16O", "14N2")
-- `dataset::String`: Dataset name (e.g., "POKAZATEL", "WCCRMT")
-- `force::Bool=false`: Force re-download even if artifact exists
-- `cache_dir::Union{String,Nothing}=nothing`: Optional custom cache directory
+- `molecule::AbstractString`: Molecular formula (e.g. `"H2O"`).
+- `isotopologue::AbstractString`: Isotopologue identifier used by the
+  ExoMol project (e.g. `"1H2-16O"`).
+- `dataset::AbstractString`: Dataset name within the isotopologue (e.g.
+  `"POKAZATEL"`).
+- `force::Bool=false`: Force a re-download of the artifact even if it
+  already exists locally.
+- `verbose::Bool=false`: Print download progress as files are retrieved.
 
 # Returns
-- `String`: Path to the downloaded dataset definition file
+- `String`: Path to the artifact directory containing the downloaded
+  files.
 
 # Examples
 ```julia
-# Download N2 WCCRMT dataset
-dataset_path = download_exomol_dataset("N2", "14N2", "WCCRMT")
-
-# Download H2O POKAZATEL dataset with force reload
-dataset_path = download_exomol_dataset("H2O", "1H2-16O", "POKAZATEL", force=true)
+julia> path = get_exomol_dataset("N2", "14N2", "WCCRMT")
+"/home/user/.julia/artifacts/…"
 ```
-
-# Notes
-Downloads the JSON format dataset definition file, which contains metadata, and 
-the actual spectroscopic data files (.states, .trans, etc.).
 """
 function get_exomol_dataset(molecule, isotopologue, dataset;
-  force=false,verbose=false)
+  force=false, verbose=false)
 
 
   # Create artifact name
@@ -74,9 +71,28 @@ end
   # https://www.exomol.com/db/{molecule}/{isotopologue}/{dataset}/{isotopologue}__{dataset}.def.json
   # def_url = "https://www.exomol.com/db/$(molecule)/$(isotopologue)/$(dataset)/$(isotopologue)__$(dataset).def.json"
   # def_filename = "$(isotopologue)__$(dataset).def.json"
-_data_url(molecule, isotopologue, dataset, type) = "https://www.exomol.com/db/$(molecule)/$(isotopologue)/$(dataset)/$(isotopologue)__$(dataset).$(type)"
-_data_filename(isotopologue, dataset, type) = "$(isotopologue)__$(dataset).$(type)"
+"""
+    _data_url(molecule, isotopologue, dataset, type)
 
+Construct the URL for a dataset component according to the ExoMol file
+layout.
+"""
+_data_url(molecule, isotopologue, dataset, type) =
+  "https://www.exomol.com/db/$(molecule)/$(isotopologue)/$(dataset)/$(isotopologue)__$(dataset).$(type)"
+
+"""
+    _data_filename(isotopologue, dataset, type)
+
+Return the expected filename for a downloaded dataset component.
+"""
+_data_filename(isotopologue, dataset, type) =
+  "$(isotopologue)__$(dataset).$(type)"
+
+"""
+    _artifact_name(molecule, isotopologue, dataset)
+
+Create the deterministic artifact name used to cache a dataset bundle.
+"""
 _artifact_name(molecule, isotopologue, dataset) =
   "exomol_dataset_$(molecule)_$(isotopologue)_$(dataset)"
 
