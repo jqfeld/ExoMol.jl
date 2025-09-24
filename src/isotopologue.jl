@@ -36,3 +36,7 @@ function load_isotopologue(folder)
   return Isotopologue(def, states, transitions)
 end
 
+function load_isotopologue(molecule, isotopologue, dataset)
+  ds = ExoMol.get_exomol_dataset(molecule, isotopologue, dataset)
+  load_isotopologue(ds)
+end
