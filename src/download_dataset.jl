@@ -54,16 +54,20 @@ function get_exomol_dataset(molecule, isotopologue, dataset;
     # create_artifact() returns the content-hash of the artifact directory once we're finished creating it
     dataset_hash = create_artifact() do artifact_dir
       # We create the artifact by simply downloading a few files into the new artifact directory
+      @info "The dataset is not in cache. Downloading..."
       for type in ["def.json", "states.bz2", "trans.bz2"]
         Downloads.download(_data_url(molecule, isotopologue, dataset, type), joinpath(artifact_dir, _data_filename(isotopologue,dataset,type));
                  verbose)
       end
+      @info "done!"
     end
 
     # Now bind that hash within our `Artifacts.toml`.  `force = true` means that if it already exists,
     # just overwrite with the new content-hash.  Unless the source files change, we do not expect
     # the content hash to change, so this should not cause unnecessary version control churn.
     bind_artifact!(artifact_toml, artifact_name, dataset_hash; force)
+  else
+    @info "Using cached dataset."
   end
 
   return artifact_path(dataset_hash)
