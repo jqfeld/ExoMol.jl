@@ -6,5 +6,5 @@
 
 /testdata/
 /Manifest.toml
-/Artifacts.toml
+# /Artifacts.toml
 /_research

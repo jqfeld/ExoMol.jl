@@ -52,7 +52,7 @@ function get_exomol_dataset(molecule, isotopologue, dataset;
 
 
   # If the name was not bound, or the hash it was bound to does not exist, create it!
-  if !artifact_exists(dataset_hash) || force
+  if isnothing(dataset_hash) || !artifact_exists(dataset_hash) || force
     # create_artifact() returns the content-hash of the artifact directory once we're finished creating it
     dataset_hash = create_artifact() do artifact_dir
       # We create the artifact by simply downloading a few files into the new artifact directory
