@@ -14,6 +14,20 @@ end
 
 _parse_field(type, value) = type <: AbstractString ? value : parse(type, value)
 
+"""
+    read_state_file(filename[, def])
+
+Read an ExoMol `.states` file and return the parsed state records.
+
+# Arguments
+- `filename::AbstractString`: Path to a `.states` or `.states.bz2` file.
+- `def`: Optional dataset definition as returned by [`read_def_file`](@ref).
+  When omitted the function looks for a sibling `.def.json` file.
+
+# Returns
+- `Vector{NamedTuple}`: State records with field names and types inferred from
+  the dataset definition.
+"""
 function read_state_file(filename, def=read_def_file(replace(filename, r".states(.bz2)" => ".def.json")))
 
   states_def = def["dataset"]["states"]

@@ -2,6 +2,21 @@ using Pkg.Artifacts
 using JSON
 
 
+"""
+    get_exomol_master_file(; force=false)
+
+Download the ExoMol master catalogue as an artifact and return its local path.
+
+# Arguments
+- `force::Bool=false`: Re-download the catalogue even if it already exists in the
+  artifact cache.
+
+# Returns
+- `String`: Absolute path to the downloaded `exomol.all.json` file.
+
+This function is primarily intended to be used internally.  For direct access to
+the parsed catalogue use [`get_exomol_master`](@ref).
+"""
 function get_exomol_master_file(; force=false)
   artifact_toml = joinpath(pkgdir(@__MODULE__), "Artifacts.toml")
 
@@ -62,6 +77,18 @@ end
 
 
 
+"""
+    get_exomol_master(; force=false)
+
+Retrieve the ExoMol master catalogue as a parsed JSON object.
+
+# Arguments
+- `force::Bool=false`: Re-download the catalogue even if it already exists in the
+  artifact cache.
+
+# Returns
+- `Dict{String,Any}`: Parsed contents of the ExoMol master catalogue.
+"""
 function get_exomol_master(; force=false)
   parse_exomol_master(get_exomol_master_file(; force))
 end
