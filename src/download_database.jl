@@ -1,4 +1,4 @@
-using Pkg.Artifacts
+using Pkg.Artifacts, Downloads
 using JSON
 
 
@@ -17,7 +17,7 @@ function get_exomol_master_file(; force=false)
     exomol_master_hash = create_artifact() do artifact_dir
       # We create the artifact by simply downloading a few files into the new artifact directory
       exomol_master_url = "https://www.exomol.com/db/exomol.all.json"
-      download(exomol_master_url, joinpath(artifact_dir, "exomol.all.json"))
+      Downloads.download(exomol_master_url, joinpath(artifact_dir, "exomol.all.json"))
     end
 
     # Now bind that hash within our `Artifacts.toml`.  `force = true` means that if it already exists,
