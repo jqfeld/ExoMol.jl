@@ -1,12 +1,34 @@
 using CodecBzip2
 
 
+"""
+    Isotopologue(definitions, states, transitions)
+
+Composite type holding all data associated with an ExoMol isotopologue.
+
+# Fields
+- `definitions::Dict`: Dataset definition metadata.
+- `states::Vector`: Parsed molecular states (typically `NamedTuple`s).
+- `transitions::Vector{Transition}`: Transition catalogue.
+"""
 struct Isotopologue{S}
   definitions::Dict
   states::Vector{S}
   transitions::Vector{Transition}
 end
 
+"""
+    load_isotopologue(folder)
+
+Load an isotopologue from a directory containing ExoMol dataset files.
+
+# Arguments
+- `folder::AbstractString`: Directory holding `.def.json`, `.states*` and
+  `.trans*` files belonging to an ExoMol dataset.
+
+# Returns
+- `Isotopologue`: Parsed isotopologue data ready for analysis.
+"""
 function load_isotopologue(folder)
 
   files = joinpath.(folder, readdir(folder))
@@ -36,6 +58,20 @@ function load_isotopologue(folder)
   return Isotopologue(def, states, transitions)
 end
 
+"""
+    load_isotopologue(molecule, isotopologue, dataset)
+
+Convenience method that downloads an ExoMol dataset (if necessary) and loads it
+into an [`Isotopologue`](@ref) struct.
+
+# Arguments
+- `molecule`: Molecular formula (e.g. `"H2O"`).
+- `isotopologue`: ExoMol isotopologue identifier.
+- `dataset`: Dataset label.
+
+# Returns
+- `Isotopologue`: Parsed isotopologue data ready for analysis.
+"""
 function load_isotopologue(molecule, isotopologue, dataset)
   ds = ExoMol.get_exomol_dataset(molecule, isotopologue, dataset)
   load_isotopologue(ds)

@@ -7,33 +7,26 @@ using ProgressMeter
 
 
 """
-    get_exomol_dataset(molecule::String, isotopologue::String, dataset::String; 
-                           force::Bool=false, cache_dir::Union{String,Nothing}=nothing)
+    get_exomol_dataset(molecule, isotopologue, dataset; force=false, verbose=false)
 
-Download a specific ExoMol dataset definition file as an artifact.
+Download a specific ExoMol dataset and cache it as an artifact.
 
 # Arguments
-- `molecule::String`: Molecule formula (e.g., "H2O", "CO2", "N2")
-- `isotopologue::String`: Isotopologue identifier (e.g., "1H2-16O", "14N2")
-- `dataset::String`: Dataset name (e.g., "POKAZATEL", "WCCRMT")
-- `force::Bool=false`: Force re-download even if artifact exists
-- `cache_dir::Union{String,Nothing}=nothing`: Optional custom cache directory
+- `molecule`: Molecular formula (e.g. `"H2O"`).
+- `isotopologue`: Isotopologue identifier as used by ExoMol (e.g. `"1H2-16O"`).
+- `dataset`: Dataset label (e.g. `"POKAZATEL"`).
+- `force::Bool=false`: Re-download the dataset even if it already exists in the
+  artifact cache.
+- `verbose::Bool=false`: Forward verbose output to `Downloads.download`.
 
 # Returns
-- `String`: Path to the downloaded dataset definition file
+- `String`: Path to the local artifact directory that contains the dataset
+  definition and accompanying data files.
 
-# Examples
-```julia
-# Download N2 WCCRMT dataset
-dataset_path = get_exomol_dataset("N2", "14N2", "WCCRMT")
+The returned directory contains at least the `.def.json`, `.states.bz2` and
+`.trans.bz2` files required to load the dataset into Julia using
+[`load_isotopologue`](@ref).
 
-# Download H2O POKAZATEL dataset with force reload
-dataset_path = get_exomol_dataset("H2O", "1H2-16O", "POKAZATEL", force=true)
-```
-
-# Notes
-Downloads the JSON format dataset definition file, which contains metadata, and 
-the actual spectroscopic data files (.states, .trans, etc.).
 """
 function get_exomol_dataset(molecule, isotopologue, dataset;
   force=false, verbose=false)
