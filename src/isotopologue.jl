@@ -55,7 +55,7 @@ function load_isotopologue(folder)
     end
   end
 
-  return Isotopologue(def, states, transitions)
+  return Isotopologue(Dict(def), states, transitions)
 end
 
 """
