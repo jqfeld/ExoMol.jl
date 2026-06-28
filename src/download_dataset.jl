@@ -1,27 +1,29 @@
 using JSON
 using Downloads
-import Printf: format, Format
+using Scratch
 using ProgressMeter
 
 
-
-
 """
-    get_exomol_dataset(molecule, isotopologue, dataset; force=false, verbose=false)
+    get_exomol_dataset(molecule, isotopologue, dataset; wn_range=nothing, force=false, verbose=false)
 
-Download a specific ExoMol dataset and cache it as an artifact.
+Download a specific ExoMol dataset and cache it in the package scratch space.
 
 # Arguments
 - `molecule`: Molecular formula (e.g. `"H2O"`).
 - `isotopologue`: Isotopologue identifier as used by ExoMol (e.g. `"1H2-16O"`).
 - `dataset`: Dataset label (e.g. `"POKAZATEL"`).
-- `force::Bool=false`: Re-download the dataset even if it already exists in the
-  artifact cache.
+- `wn_range`: Wavenumber range `(wn_min, wn_max)` in cm⁻¹. When provided, only
+  transition files whose range falls entirely within `[wn_min, wn_max]` are
+  downloaded. Unsegmented transition files (covering the full range) are always
+  included. Defaults to `nothing` (download all transition files).
+- `force::Bool=false`: Re-download files even if they already exist in the local
+  cache.
 - `verbose::Bool=false`: Forward verbose output to `Downloads.download`.
 
 # Returns
-- `String`: Path to the local artifact directory that contains the dataset
-  definition and accompanying data files.
+- `String`: Path to the local directory that contains the dataset definition and
+  accompanying data files.
 
 The returned directory contains at least the `.def.json`, `.states.bz2` and
 `.trans.bz2` files required to load the dataset into Julia using
@@ -29,82 +31,99 @@ The returned directory contains at least the `.def.json`, `.states.bz2` and
 
 """
 function get_exomol_dataset(molecule, isotopologue, dataset;
-  force=false, verbose=false)
+  wn_range=nothing, force=false, verbose=false)
 
+  datasets_dir = @get_scratch!("exomol_datasets")
+  dataset_dir = joinpath(datasets_dir, molecule, isotopologue, dataset)
+  def_path = joinpath(dataset_dir, _data_filename(isotopologue, dataset, "def.json"))
 
-  # Create artifact name
-  artifact_name = _artifact_name(molecule, isotopologue, dataset)
-
-  artifact_toml = joinpath(pkgdir(@__MODULE__), "Artifacts.toml")
-
-  # This is the path to the Artifacts.toml we will manipulate
-
-  # Query the `Artifacts.toml` file for the hash bound to the name "iris"
-  # (returns `nothing` if no such binding exists)
-  dataset_hash = artifact_hash(artifact_name, artifact_toml)
-
-
-  # If the name was not bound, or the hash it was bound to does not exist, create it!
-  if isnothing(dataset_hash) || !artifact_exists(dataset_hash) || force
-    # create_artifact() returns the content-hash of the artifact directory once we're finished creating it
-    dataset_hash = create_artifact() do artifact_dir
-      # We create the artifact by simply downloading a few files into the new artifact directory
-      @info "The dataset is not in cache. Downloading..."
-      Downloads.download(_data_url(molecule, isotopologue, dataset, "def.json"), joinpath(artifact_dir, _data_filename(isotopologue, dataset, "def.json"));
-        verbose)
-      def = read_def_file(joinpath(artifact_dir, _data_filename(isotopologue, dataset, "def.json")))
-      @info "Obtained dataset definition file."
-
-      Downloads.download(_data_url(molecule, isotopologue, dataset, "states.bz2"), joinpath(artifact_dir, _data_filename(isotopologue, dataset, "states.bz2"));
-        verbose)
-      @info "Obtained states file"
-
-
-      num_trans_files = def["dataset"]["transitions"]["number_of_transition_files"]
-      @info "There are $num_trans_files transition files"
-      if num_trans_files == 1
-        Downloads.download(_data_url(molecule, isotopologue, dataset, "trans.bz2"), joinpath(artifact_dir, _data_filename(isotopologue, dataset, "trans.bz2"));
-          verbose)
-      else
-        max_wavenumber = Int(def["dataset"]["transitions"]["max_wavenumber"])
-        del_wavenumber = Int(max_wavenumber / num_trans_files)
-        num_digits = length(digits(max_wavenumber))
-        fmt = Format("%0$(num_digits)d")
-        p = Progress(num_trans_files)
-        for lower in range(0, max_wavenumber; step=del_wavenumber)
-          upper = lower + del_wavenumber
-          wavenumber_range = "$(format(fmt,lower))-$(format(fmt,upper))"
-          Downloads.download(_data_url(molecule, isotopologue, dataset, wavenumber_range, "trans.bz2"), 
-                             joinpath(artifact_dir, _data_filename(isotopologue, dataset, wavenumber_range, "trans.bz2"));
-            verbose)
-          next!(p)
-        end
-      end
-
-      @info "done!"
-    end
-
-    # Now bind that hash within our `Artifacts.toml`.  `force = true` means that if it already exists,
-    # just overwrite with the new content-hash.  Unless the source files change, we do not expect
-    # the content hash to change, so this should not cause unnecessary version control churn.
-    bind_artifact!(artifact_toml, artifact_name, dataset_hash; force=true)
-  else
-    @info "Using cached dataset."
+  if !isfile(def_path) || force
+    mkpath(dataset_dir)
+    @info "Downloading dataset..."
+    Downloads.download(_data_url(molecule, isotopologue, dataset, "def.json"), def_path; verbose)
+    @info "Obtained dataset definition file."
+    Downloads.download(
+      _data_url(molecule, isotopologue, dataset, "states.bz2"),
+      joinpath(dataset_dir, _data_filename(isotopologue, dataset, "states.bz2"));
+      verbose)
+    @info "Obtained states file"
   end
 
-  return artifact_path(dataset_hash)
+  pf_path = joinpath(dataset_dir, _data_filename(isotopologue, dataset, "pf"))
+  if !isfile(pf_path) || force
+    Downloads.download(_data_url(molecule, isotopologue, dataset, "pf"), pf_path; verbose)
+    @info "Obtained partition function file"
+  end
+
+  trans_urls = _fetch_trans_urls(molecule, isotopologue, dataset; wn_range)
+  pending = force ? trans_urls : filter(url -> !isfile(joinpath(dataset_dir, basename(url))), trans_urls)
+
+  if isempty(pending)
+    @info "Using cached dataset."
+  else
+    @info "Downloading $(length(pending)) transition file(s)..."
+    p = Progress(length(pending))
+    for url in pending
+      Downloads.download("https://www." * url, joinpath(dataset_dir, basename(url)); verbose)
+      next!(p)
+    end
+    @info "done!"
+  end
+
+  return dataset_dir
 end
 
 
-# Construct URL following ExoMol pattern
-# https://www.exomol.com/db/{molecule}/{isotopologue}/{dataset}/{isotopologue}__{dataset}.def.json
-# def_url = "https://www.exomol.com/db/$(molecule)/$(isotopologue)/$(dataset)/$(isotopologue)__$(dataset).def.json"
-# def_filename = "$(isotopologue)__$(dataset).def.json"
 _data_url(molecule, isotopologue, dataset, type) = "https://www.exomol.com/db/$(molecule)/$(isotopologue)/$(dataset)/$(isotopologue)__$(dataset).$(type)"
-_data_url(molecule, isotopologue, dataset, wavenumber_range, type) = "https://www.exomol.com/db/$(molecule)/$(isotopologue)/$(dataset)/$(isotopologue)__$(dataset)__$(wavenumber_range).$(type)"
 _data_filename(isotopologue, dataset, type) = "$(isotopologue)__$(dataset).$(type)"
-_data_filename(isotopologue, dataset, wavenumber_range, type) = "$(isotopologue)__$(dataset)__$(wavenumber_range).$(type)"
 
-_artifact_name(molecule, isotopologue, dataset) =
-  "exomol_dataset_$(molecule)_$(isotopologue)_$(dataset)"
+function _fetch_linelist_api(molecule)
+  buf = IOBuffer()
+  Downloads.download("https://exomol.com/api/?molecule=$(molecule)&datatype=linelist", buf)
+  JSON.parse(String(take!(buf)))
+end
 
+function _fetch_trans_urls(molecule, isotopologue, dataset; wn_range=nothing)
+  response = _fetch_linelist_api(molecule)
+
+  for (_, iso_data) in response
+    !haskey(iso_data, "linelist") && continue
+    !haskey(iso_data["linelist"], dataset) && continue
+    files = iso_data["linelist"][dataset]["files"]
+    any(f -> occursin("/$(isotopologue)/", f["url"]), files) || continue
+    trans = filter(f -> endswith(f["url"], ".trans.bz2") && haskey(f, "size"), files)
+    isnothing(wn_range) && return [f["url"] for f in trans]
+    return [f["url"] for f in trans if _trans_in_wn_range(basename(f["url"]), isotopologue, dataset, wn_range)]
+  end
+
+  error("Dataset $(dataset) for isotopologue $(isotopologue) not found in ExoMol API")
+end
+
+function _recommended_dataset(molecule, isotopologue)
+  response = _fetch_linelist_api(molecule)
+
+  for (_, iso_data) in response
+    !haskey(iso_data, "linelist") && continue
+    linelist = iso_data["linelist"]
+    # Check this entry belongs to the requested isotopologue
+    iso_match = any(
+      isa(info, Dict) && haskey(info, "files") &&
+      any(f -> occursin("/$(isotopologue)/", f["url"]), info["files"])
+      for (_, info) in linelist
+    )
+    iso_match || continue
+    for (name, info) in linelist
+      isa(info, Dict) && get(info, "recommended", false) && return name
+    end
+  end
+
+  error("No recommended dataset found for $(molecule) / $(isotopologue)")
+end
+
+function _trans_in_wn_range(filename, isotopologue, dataset, wn_range)
+  wn_min, wn_max = wn_range
+  filename == "$(isotopologue)__$(dataset).trans.bz2" && return true
+  m = match(r"__(\d+)-(\d+)\.trans\.bz2$", filename)
+  isnothing(m) && return false
+  return parse(Int, m[1]) >= wn_min && parse(Int, m[2]) <= wn_max
+end

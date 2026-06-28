@@ -1,7 +1,9 @@
 using Test
 using ExoMol
 
-n2 = load_isotopologue("N2", "14N2", "WCCRMT")
+@test ExoMol._recommended_dataset("N2", "14N2") == "WCCRMT"
+
+n2 = load_isotopologue("N2", "14N2")
 
 @testset "Nitrogen" begin
   @test haskey(n2.definitions, "dataset")
@@ -41,5 +43,9 @@ n2 = load_isotopologue("N2", "14N2", "WCCRMT")
   @test n2.transitions[7182000].upper_id == 1080
   @test n2.transitions[7182000].wavenumber == 46379.313372
 
+  @test !isnothing(n2.partition_function)
+  @test n2.partition_function(1.0) ≈ 6.0294
+  @test n2.partition_function(2.0) ≈ 6.5197
+  @test 6.0294 < n2.partition_function(1.5) < 6.5197  # interpolated
 
 end
