@@ -10,6 +10,28 @@ db = get_exomol_master()
 @test haskey(db, "num_molecules")
 @test length(db["molecules"]) == db["num_molecules"]
 
+@testset "save_dataset" begin
+  dest = mktempdir()
+  result = save_dataset(dest, "N2", "14N2", "WCCRMT")
+  @test result == dest
+  saved = readdir(dest)
+  @test "14N2__WCCRMT.def.json" in saved
+  @test "14N2__WCCRMT.states.bz2" in saved
+  @test "14N2__WCCRMT.trans.bz2" in saved
+  @test "14N2__WCCRMT.pf" in saved
+
+  # load_isotopologue works on the saved directory
+  iso = load_isotopologue(dest)
+  @test length(iso.states) == 58380
+  @test length(iso.transitions) == 7182000
+
+  # force=false skips existing files (no error)
+  save_dataset(dest, "N2", "14N2", "WCCRMT"; force=false)
+
+  # force=true overwrites without error
+  save_dataset(dest, "N2", "14N2", "WCCRMT"; force=true)
+end
+
 @testset "wn_range filtering" begin
   f = ExoMol._trans_in_wn_range
 

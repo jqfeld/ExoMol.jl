@@ -3,7 +3,7 @@ module ExoMol
 
 # include("constants.jl")
 
-export get_exomol_master
+export get_exomol_master, get_exomol_dataset, save_dataset
 include("download_database.jl")
 include("download_dataset.jl")
 

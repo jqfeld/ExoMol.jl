@@ -1,7 +1,7 @@
 using Test
 using ExoMol
 
-@test ExoMol._recommended_dataset("N2", "14N2") == "WCCRMT"
+@test ExoMol._recommended_dataset("N2", "14N2")[1] == "WCCRMT"
 
 n2 = load_isotopologue("N2", "14N2")
 

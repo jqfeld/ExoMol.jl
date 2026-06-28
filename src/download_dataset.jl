@@ -31,7 +31,7 @@ The returned directory contains at least the `.def.json`, `.states.bz2` and
 
 """
 function get_exomol_dataset(molecule, isotopologue, dataset;
-  wn_range=nothing, force=false, verbose=false)
+  wn_range=nothing, force=false, verbose=false, _response=nothing)
 
   datasets_dir = @get_scratch!("exomol_datasets")
   dataset_dir = joinpath(datasets_dir, molecule, isotopologue, dataset)
@@ -55,7 +55,7 @@ function get_exomol_dataset(molecule, isotopologue, dataset;
     @info "Obtained partition function file"
   end
 
-  trans_urls = _fetch_trans_urls(molecule, isotopologue, dataset; wn_range)
+  trans_urls = _fetch_trans_urls(molecule, isotopologue, dataset; wn_range, _response)
   pending = force ? trans_urls : filter(url -> !isfile(joinpath(dataset_dir, basename(url))), trans_urls)
 
   if isempty(pending)
@@ -74,6 +74,49 @@ function get_exomol_dataset(molecule, isotopologue, dataset;
 end
 
 
+"""
+    save_dataset(destination, molecule, isotopologue, dataset; force=false)
+
+Copy a cached ExoMol dataset from the scratch space to a directory of choice.
+
+The dataset must already be present in the local cache (i.e. `get_exomol_dataset`
+must have been called first). Only the files currently in the cache are copied,
+so if the dataset was downloaded with a `wn_range` filter, only those transition
+files will appear at the destination.
+
+The destination directory layout is identical to what [`load_isotopologue`](@ref)
+expects, so the saved path can be passed directly to it:
+
+```julia
+iso = load_isotopologue(save_dataset("/data/exomol", "H2O", "1H2-16O", "POKAZATEL"))
+```
+
+# Arguments
+- `destination::AbstractString`: Directory to write files into. Created if it
+  does not exist.
+- `molecule`: Molecular formula (e.g. `"H2O"`).
+- `isotopologue`: ExoMol isotopologue identifier (e.g. `"1H2-16O"`).
+- `dataset`: Dataset label (e.g. `"POKAZATEL"`).
+- `force::Bool=false`: Overwrite files that already exist at the destination.
+
+# Returns
+- `String`: `destination`, for use in pipelines.
+"""
+function save_dataset(destination, molecule, isotopologue, dataset; force=false)
+  src = joinpath(@get_scratch!("exomol_datasets"), molecule, isotopologue, dataset)
+  isfile(joinpath(src, _data_filename(isotopologue, dataset, "def.json"))) ||
+    error("Dataset not in cache — run get_exomol_dataset(\"$molecule\", \"$isotopologue\", \"$dataset\") first.")
+
+  mkpath(destination)
+  for filename in readdir(src)
+    dst_file = joinpath(destination, filename)
+    if !isfile(dst_file) || force
+      cp(joinpath(src, filename), dst_file; force)
+    end
+  end
+  return destination
+end
+
 _data_url(molecule, isotopologue, dataset, type) = "https://www.exomol.com/db/$(molecule)/$(isotopologue)/$(dataset)/$(isotopologue)__$(dataset).$(type)"
 _data_filename(isotopologue, dataset, type) = "$(isotopologue)__$(dataset).$(type)"
 
@@ -83,8 +126,8 @@ function _fetch_linelist_api(molecule)
   JSON.parse(String(take!(buf)))
 end
 
-function _fetch_trans_urls(molecule, isotopologue, dataset; wn_range=nothing)
-  response = _fetch_linelist_api(molecule)
+function _fetch_trans_urls(molecule, isotopologue, dataset; wn_range=nothing, _response=nothing)
+  response = isnothing(_response) ? _fetch_linelist_api(molecule) : _response
 
   for (_, iso_data) in response
     !haskey(iso_data, "linelist") && continue
@@ -105,7 +148,6 @@ function _recommended_dataset(molecule, isotopologue)
   for (_, iso_data) in response
     !haskey(iso_data, "linelist") && continue
     linelist = iso_data["linelist"]
-    # Check this entry belongs to the requested isotopologue
     iso_match = any(
       isa(info, Dict) && haskey(info, "files") &&
       any(f -> occursin("/$(isotopologue)/", f["url"]), info["files"])
@@ -113,7 +155,7 @@ function _recommended_dataset(molecule, isotopologue)
     )
     iso_match || continue
     for (name, info) in linelist
-      isa(info, Dict) && get(info, "recommended", false) && return name
+      isa(info, Dict) && get(info, "recommended", false) && return name, response
     end
   end
 

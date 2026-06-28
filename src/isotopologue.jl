@@ -3,7 +3,7 @@ using DataInterpolations
 
 
 """
-    Isotopologue(definitions, states, transitions, partition_function)
+    Isotopologue{S, P}(definitions, states, transitions, partition_function)
 
 Composite type holding all data associated with an ExoMol isotopologue.
 
@@ -14,11 +14,11 @@ Composite type holding all data associated with an ExoMol isotopologue.
 - `partition_function`: `LinearInterpolation` of Q(T) over temperature, or
   `nothing` if no partition function file was found.
 """
-struct Isotopologue{S}
+struct Isotopologue{S, P}
   definitions::Dict
   states::Vector{S}
   transitions::Vector{Transition}
-  partition_function
+  partition_function::P
 end
 
 """
@@ -126,7 +126,8 @@ Like the three-argument form but automatically selects the dataset marked
 - `Isotopologue`: Parsed isotopologue data ready for analysis.
 """
 function load_isotopologue(molecule, isotopologue; wn_range=nothing, force=false, verbose=false)
-  dataset = ExoMol._recommended_dataset(molecule, isotopologue)
+  dataset, response = ExoMol._recommended_dataset(molecule, isotopologue)
   @info "Using recommended dataset: $dataset"
-  load_isotopologue(molecule, isotopologue, dataset; wn_range, force, verbose)
+  ds = ExoMol.get_exomol_dataset(molecule, isotopologue, dataset; wn_range, force, verbose, _response=response)
+  load_isotopologue(ds)
 end
