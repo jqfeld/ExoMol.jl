@@ -27,9 +27,10 @@ Read an ExoMol `.trans` file and return the transitions contained in it.
 # Returns
 - `Vector{Transition}`: Parsed transition records.
 """
-function read_trans_file(filename)
+function read_trans_file(filename, n=0)
 
   transitions = Vector{Transition}()
+  n > 0 && sizehint!(transitions, n)
 
   _open_exomol_file(filename) do io
     for line in eachline(io)
