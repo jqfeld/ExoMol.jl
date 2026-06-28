@@ -1,3 +1,18 @@
+using CodecBzip2
+
+function _open_exomol_file(f, filename)
+  if endswith(filename, ".bz2")
+    stream = Bzip2DecompressorStream(open(filename))
+    try
+      f(stream)
+    finally
+      close(stream)
+    end
+  else
+    open(f, filename)
+  end
+end
+
 
 function _fortran_to_type(str)
   if startswith(str, "I")
@@ -42,30 +57,13 @@ function read_state_file(filename, def=read_def_file(replace(filename, r".states
   NT = NamedTuple{Tuple(Symbol.(field_names)), Tuple{field_types...}}
   states = Vector{NT}()
 
-  if endswith(filename, ".bz2")
-
-    stream = Bzip2DecompressorStream(open(filename))
-    try
-      for line in eachline(stream)
-        strings = split(line)
-        length(strings) == length(field_names) || error("Expected $(length(field_names)) columns, got $(length(strings)) in: $line")
-        push!(states, NT(Tuple(_parse_field.(field_types, strings))))
-      end
-    finally
-      close(stream)
-    end
-
-  else
-
-    open(filename, "r") do io
-      for line in eachline(io)
-        strings = split(line)
-        length(strings) == length(field_names) || error("Expected $(length(field_names)) columns, got $(length(strings)) in: $line")
-        push!(states, NT(Tuple(_parse_field.(field_types, strings))))
-      end
+  _open_exomol_file(filename) do io
+    for line in eachline(io)
+      strings = split(line)
+      length(strings) == length(field_names) || error("Expected $(length(field_names)) columns, got $(length(strings)) in: $line")
+      push!(states, NT(Tuple(_parse_field.(field_types, strings))))
     end
   end
 
   return states
 end
-
