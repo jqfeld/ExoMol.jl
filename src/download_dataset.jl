@@ -87,7 +87,7 @@ function get_exomol_dataset(molecule, isotopologue, dataset;
     # Now bind that hash within our `Artifacts.toml`.  `force = true` means that if it already exists,
     # just overwrite with the new content-hash.  Unless the source files change, we do not expect
     # the content hash to change, so this should not cause unnecessary version control churn.
-    bind_artifact!(artifact_toml, artifact_name, dataset_hash; force)
+    bind_artifact!(artifact_toml, artifact_name, dataset_hash; force=true)
   else
     @info "Using cached dataset."
   end

@@ -20,15 +20,15 @@ n2 = load_isotopologue("N2", "14N2", "WCCRMT")
 
   @test n2.states[1].ID == 1
   @test n2.states[1].E == 59266.252923
-  @test n2.states[1].var"hunda:ElecState" == "B3Pig"
+  @test n2.states[1].ElecState == "B3Pig"
 
   @test n2.states[1000].ID == 1000
   @test n2.states[1000].E == 64358.85344
-  @test n2.states[1000].var"hunda:ElecState" == "B3Pig"
+  @test n2.states[1000].ElecState == "B3Pig"
 
   @test n2.states[58380].ID == 58380
   @test n2.states[58380].E == 130072.954819
-  @test n2.states[58380].var"hunda:ElecState" == "C3Piu"
+  @test n2.states[58380].ElecState == "C3Piu"
 
 
   @test length(n2.transitions) == 7182000

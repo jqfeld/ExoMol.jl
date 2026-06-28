@@ -24,7 +24,7 @@ function get_exomol_master_file(; force=false)
 
   # Query the `Artifacts.toml` file for the hash bound to the name "iris"
   # (returns `nothing` if no such binding exists)
-  exomol_master_hash = artifact_hash("master", artifact_toml)
+  exomol_master_hash = artifact_hash("exomol_master", artifact_toml)
 
   # If the name was not bound, or the hash it was bound to does not exist, create it!
   if exomol_master_hash == nothing || !artifact_exists(exomol_master_hash) || force
@@ -38,7 +38,7 @@ function get_exomol_master_file(; force=false)
     # Now bind that hash within our `Artifacts.toml`.  `force = true` means that if it already exists,
     # just overwrite with the new content-hash.  Unless the source files change, we do not expect
     # the content hash to change, so this should not cause unnecessary version control churn.
-    bind_artifact!(artifact_toml, "exomol_master", exomol_master_hash)
+    bind_artifact!(artifact_toml, "exomol_master", exomol_master_hash; force=true)
   end
 
   joinpath(artifact_path(exomol_master_hash), "exomol.all.json")
