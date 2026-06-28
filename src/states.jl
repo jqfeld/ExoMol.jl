@@ -47,7 +47,7 @@ function read_state_file(filename, def=read_def_file(replace(filename, r".states
     try
       for line in eachline(stream)
         strings = split(line)
-        @assert length(strings) == length(field_names)
+        length(strings) == length(field_names) || error("Expected $(length(field_names)) columns, got $(length(strings)) in: $line")
         state = (; (Symbol.(field_names) .=> _parse_field.(field_types, strings))...)
         push!(states, state)
       end
@@ -60,7 +60,7 @@ function read_state_file(filename, def=read_def_file(replace(filename, r".states
     open(filename, "r") do io
       for line in eachline(io)
         strings = split(line)
-        @assert length(strings) == length(field_names)
+        length(strings) == length(field_names) || error("Expected $(length(field_names)) columns, got $(length(strings)) in: $line")
         state = (; (Symbol.(field_names) .=> _parse_field.(field_types, strings))...)
         push!(states, state)
       end
