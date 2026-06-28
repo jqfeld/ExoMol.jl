@@ -13,9 +13,9 @@ Parse an ExoMol dataset definition (`.def.json`) file.
 # Returns
 - `Dict{String,Any}`: Parsed JSON data structure describing the dataset.
 """
-function read_def_file(filename;)
+function read_def_file(filename)
   if endswith(filename, ".json")
     return JSON.parsefile(filename)
   end
-  
+  throw(ArgumentError("Expected a .json file, got: $filename"))
 end
