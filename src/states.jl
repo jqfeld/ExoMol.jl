@@ -44,13 +44,16 @@ function read_state_file(filename, def=read_def_file(replace(filename, r".states
   if endswith(filename, ".bz2")
 
     stream = Bzip2DecompressorStream(open(filename))
-    for line in eachline(stream)
-      strings = split(line)
-      @assert length(strings) == length(field_names)
-      state = (; (Symbol.(field_names) .=> _parse_field.(field_types, strings))...)
-      push!(states, state)
+    try
+      for line in eachline(stream)
+        strings = split(line)
+        @assert length(strings) == length(field_names)
+        state = (; (Symbol.(field_names) .=> _parse_field.(field_types, strings))...)
+        push!(states, state)
+      end
+    finally
+      close(stream)
     end
-    close(stream)
 
   else
 

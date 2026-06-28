@@ -35,7 +35,8 @@ function read_trans_file(filename)
 
   if endswith(filename, ".bz2")
     stream = Bzip2DecompressorStream(open(filename))
-    for line in eachline(stream)
+    try
+      for line in eachline(stream)
         strings = split(line)
         push!(transitions, Transition(
           parse(Int, strings[1]),
@@ -43,8 +44,10 @@ function read_trans_file(filename)
           parse(Float64, strings[3]),
           parse(Float64, strings[4])
         ))
+      end
+    finally
+      close(stream)
     end
-    close(stream)
   else
     open(filename, "r") do io
       for line in eachline(io)
