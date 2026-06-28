@@ -39,7 +39,8 @@ function read_state_file(filename, def=read_def_file(replace(filename, r".states
     push!(field_types, _fortran_to_type(field["ffmt"]))
   end
 
-  states = Vector{Any}()
+  NT = NamedTuple{Tuple(Symbol.(field_names)), Tuple{field_types...}}
+  states = Vector{NT}()
 
   if endswith(filename, ".bz2")
 
@@ -48,8 +49,7 @@ function read_state_file(filename, def=read_def_file(replace(filename, r".states
       for line in eachline(stream)
         strings = split(line)
         length(strings) == length(field_names) || error("Expected $(length(field_names)) columns, got $(length(strings)) in: $line")
-        state = (; (Symbol.(field_names) .=> _parse_field.(field_types, strings))...)
-        push!(states, state)
+        push!(states, NT(Tuple(_parse_field.(field_types, strings))))
       end
     finally
       close(stream)
@@ -61,12 +61,11 @@ function read_state_file(filename, def=read_def_file(replace(filename, r".states
       for line in eachline(io)
         strings = split(line)
         length(strings) == length(field_names) || error("Expected $(length(field_names)) columns, got $(length(strings)) in: $line")
-        state = (; (Symbol.(field_names) .=> _parse_field.(field_types, strings))...)
-        push!(states, state)
+        push!(states, NT(Tuple(_parse_field.(field_types, strings))))
       end
     end
   end
 
-  return identity.(states) # fix the eltype, not sure if helpful
+  return states
 end
 
