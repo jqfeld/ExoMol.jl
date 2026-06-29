@@ -1,7 +1,35 @@
 using JSON
 using Downloads
 using Scratch
-using ProgressMeter
+
+
+function _human_bytes(n)
+  n < 1_000         && return "$(n) B"
+  n < 1_000_000     && return "$(round(n/1_000,         digits=1)) kB"
+  n < 1_000_000_000 && return "$(round(n/1_000_000,     digits=1)) MB"
+  return "$(round(n/1_000_000_000, digits=1)) GB"
+end
+
+function _download_with_progress(url, dest; desc="", verbose=false)
+  shown = Ref(false)
+  Downloads.download(url, dest; verbose,
+    progress = (total, now) -> begin
+      shown[] = true
+      cols = displaysize(stderr)[2]
+      if total > 0
+        frac = clamp(now / total, 0.0, 1.0)
+        bar_width = max(10, cols - length(desc) - 30)
+        filled = round(Int, frac * bar_width)
+        bar = "█"^filled * "░"^(bar_width - filled)
+        pct = round(Int, 100 * frac)
+        print(stderr, "\r$(desc) [$(bar)] $(pct)%  $(_human_bytes(now)) / $(_human_bytes(total))")
+      else
+        print(stderr, "\r$(desc)  $(_human_bytes(now)) downloaded…")
+      end
+      flush(stderr)
+    end)
+  shown[] && println(stderr)
+end
 
 
 """
@@ -39,14 +67,12 @@ function get_exomol_dataset(molecule, isotopologue, dataset;
 
   if !isfile(def_path) || force
     mkpath(dataset_dir)
-    @info "Downloading dataset..."
+    @info "Downloading $molecule/$isotopologue/$dataset..."
     Downloads.download(_data_url(molecule, isotopologue, dataset, "def.json"), def_path; verbose)
-    @info "Obtained dataset definition file."
-    Downloads.download(
+    _download_with_progress(
       _data_url(molecule, isotopologue, dataset, "states.bz2"),
       joinpath(dataset_dir, _data_filename(isotopologue, dataset, "states.bz2"));
-      verbose)
-    @info "Obtained states file"
+      desc="  States:", verbose)
   end
 
   pf_path = joinpath(dataset_dir, _data_filename(isotopologue, dataset, "pf"))
@@ -58,19 +84,20 @@ function get_exomol_dataset(molecule, isotopologue, dataset;
   def = JSON.parsefile(def_path)
   _download_broad_files(molecule, isotopologue, dataset_dir, def; force, verbose)
 
-  trans_urls = _fetch_trans_urls(molecule, isotopologue, dataset; wn_range, _response)
-  pending = force ? trans_urls : filter(url -> !isfile(joinpath(dataset_dir, basename(url))), trans_urls)
+  trans_files = _fetch_trans_urls(molecule, isotopologue, dataset; wn_range, _response)
+  pending = force ? trans_files : filter(t -> !isfile(joinpath(dataset_dir, basename(t.url))), trans_files)
 
   if isempty(pending)
     @info "Using cached dataset."
   else
-    @info "Downloading $(length(pending)) transition file(s)..."
-    p = Progress(length(pending))
-    for url in pending
-      Downloads.download("https://www." * url, joinpath(dataset_dir, basename(url)); verbose)
-      next!(p)
+    n = length(pending)
+    total = sum(t.size for t in pending)
+    @info "Downloading $n transition file(s) ($(_human_bytes(total)) total)..."
+    for (i, t) in enumerate(pending)
+      fname = basename(t.url)
+      _download_with_progress("https://www." * t.url, joinpath(dataset_dir, fname);
+        desc="  [$i/$n] $fname:", verbose)
     end
-    @info "done!"
   end
 
   return dataset_dir
@@ -138,8 +165,8 @@ function _fetch_trans_urls(molecule, isotopologue, dataset; wn_range=nothing, _r
     files = iso_data["linelist"][dataset]["files"]
     any(f -> occursin("/$(isotopologue)/", f["url"]), files) || continue
     trans = filter(f -> endswith(f["url"], ".trans.bz2") && haskey(f, "size"), files)
-    isnothing(wn_range) && return [f["url"] for f in trans]
-    return [f["url"] for f in trans if _trans_in_wn_range(basename(f["url"]), isotopologue, dataset, wn_range)]
+    isnothing(wn_range) && return [(url=f["url"], size=f["size"]) for f in trans]
+    return [(url=f["url"], size=f["size"]) for f in trans if _trans_in_wn_range(basename(f["url"]), isotopologue, dataset, wn_range)]
   end
 
   error("Dataset $(dataset) for isotopologue $(isotopologue) not found in ExoMol API")
