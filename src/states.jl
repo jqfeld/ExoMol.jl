@@ -57,11 +57,21 @@ function read_state_file(filename, def=read_def_file(replace(filename, r".states
   NT = NamedTuple{Tuple(Symbol.(field_names)), Tuple{field_types...}}
   states = Vector{NT}()
 
+  n = length(field_names)
+
+  # split(line) still allocates a Vector{SubString} per line. This can be
+  # eliminated by pre-computing fixed byte positions from the ffmt widths
+  # (e.g. "I12" → 12, "F12.6" → 12, "ES12.4" → 12, with 1-space separators)
+  # and replacing split with @view line[start:stop] slices — same approach
+  # used in read_trans_file. Deferred because states files are small relative
+  # to transition files, so the win is modest.
   _open_exomol_file(filename) do io
-    for line in eachline(io)
+    content = read(io, String)
+    for line in eachsplit(content, '\n')
+      isempty(line) && continue
       strings = split(line)
-      length(strings) == length(field_names) || error("Expected $(length(field_names)) columns, got $(length(strings)) in: $line")
-      push!(states, NT(Tuple(_parse_field.(field_types, strings))))
+      length(strings) == n || error("Expected $n columns, got $(length(strings)) in: $line")
+      push!(states, NT(ntuple(i -> _parse_field(field_types[i], strings[i]), n)))
     end
   end
 
