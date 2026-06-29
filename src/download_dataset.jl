@@ -42,21 +42,17 @@ Download a specific ExoMol dataset and cache it in the package scratch space.
 - `isotopologue`: Isotopologue identifier as used by ExoMol (e.g. `"1H2-16O"`).
 - `dataset`: Dataset label (e.g. `"POKAZATEL"`).
 - `wn_range`: Wavenumber range `(wn_min, wn_max)` in cm⁻¹. When provided, only
-  transition files whose range falls entirely within `[wn_min, wn_max]` are
-  downloaded. Unsegmented transition files (covering the full range) are always
+  transition files that overlap `[wn_min, wn_max]` are downloaded. Unsegmented
+  transition files (those without a wavenumber range in their filename) are always
   included. Defaults to `nothing` (download all transition files).
 - `force::Bool=false`: Re-download files even if they already exist in the local
   cache.
 - `verbose::Bool=false`: Forward verbose output to `Downloads.download`.
 
 # Returns
-- `String`: Path to the local directory that contains the dataset definition and
-  accompanying data files.
-
-The returned directory contains at least the `.def.json`, `.states.bz2` and
-`.trans.bz2` files required to load the dataset into Julia using
-[`load_isotopologue`](@ref).
-
+- `String`: Path to the local cache directory containing the downloaded files
+  (`.def.json`, `.states.bz2`, `.pf`, `.broad`, and `.trans.bz2` files).
+  This path can be passed directly to [`load_isotopologue`](@ref).
 """
 function get_exomol_dataset(molecule, isotopologue, dataset;
   wn_range=nothing, force=false, verbose=false, _response=nothing)
@@ -271,5 +267,5 @@ function _trans_in_wn_range(filename, isotopologue, dataset, wn_range)
   filename == "$(isotopologue)__$(dataset).trans.bz2" && return true
   m = match(r"__(\d+)-(\d+)\.trans\.bz2$", filename)
   isnothing(m) && return false
-  return parse(Int, m[1]) >= wn_min && parse(Int, m[2]) <= wn_max
+  return parse(Int, m[1]) < wn_max && parse(Int, m[2]) > wn_min
 end

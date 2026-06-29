@@ -22,7 +22,7 @@ function _fortran_to_type(str)
   elseif startswith(str, "A")
     return String
   else
-    error("Unknown type")
+    error("Unknown Fortran format: $str")
   end
 end
 
@@ -50,7 +50,7 @@ Read an ExoMol `.states` file and return the parsed state records.
 - `Vector{NamedTuple}`: State records with field names and types inferred from
   the dataset definition.
 """
-function read_state_file(filename, def=read_def_file(replace(filename, r".states(.bz2)" => ".def.json")))
+function read_state_file(filename, def=read_def_file(replace(filename, r"\.states(\.bz2)?$" => ".def.json")))
 
   states_def = def["dataset"]["states"]
 

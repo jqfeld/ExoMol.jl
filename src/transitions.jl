@@ -16,10 +16,17 @@ struct Transition
   wavenumber::Float64
 end
 
+function Base.show(io::IO, t::Transition)
+    print(io, "Transition($(t.upper_id) → $(t.lower_id), A=$(t.A) s⁻¹, ν̃=$(t.wavenumber) cm⁻¹)")
+end
+
 """
     read_trans_file(filename)
 
-Read an ExoMol `.trans` file and return the transitions contained in it.
+Read an ExoMol `.trans` or `.trans.bz2` file and return its transition records.
+
+Columns are parsed by fixed byte position (1–12, 14–25, 27–36, 38–end) rather
+than by splitting on whitespace, which avoids per-line allocations.
 
 # Arguments
 - `filename::AbstractString`: Path to a `.trans` or `.trans.bz2` file.

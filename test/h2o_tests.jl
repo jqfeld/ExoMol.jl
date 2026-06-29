@@ -3,10 +3,9 @@ using ExoMol
 
 @testset "H2O POKAZATEL" begin
 
-  # wn_range=(0, 50) selects no trans files (segment files cover 0-100, 100-200, …
-  # so none fits entirely within 50 cm⁻¹) while still downloading def, states,
-  # pf, and all .broad files — total ~7 MB.
-  h2o = load_isotopologue("H2O", "1H2-16O", "POKAZATEL"; wn_range=(0, 50))
+  # wn_range above the dataset maximum (41200 cm⁻¹) selects no trans files while
+  # still downloading def, states, pf, and all .broad files — total ~7 MB.
+  h2o = load_isotopologue("H2O", "1H2-16O", "POKAZATEL"; wn_range=(41200, 42000))
 
   @testset "definitions" begin
     @test haskey(h2o.definitions, "dataset")
@@ -34,7 +33,7 @@ using ExoMol
   end
 
   @testset "transitions" begin
-    # No trans files downloaded at wn_range=(0, 50); first segment starts at 0-100
+    # No segments overlap wn_range=(41200, 42000); last segment ends at 41200
     @test isempty(h2o.transitions)
   end
 
@@ -73,7 +72,7 @@ using ExoMol
 
   @testset "broad_fallback no-op" begin
     # Isotopologue already has broadeners; broad_fallback returns early
-    h2o_fb = load_isotopologue("H2O", "1H2-16O", "POKAZATEL"; wn_range=(0, 50), broad_fallback=true)
+    h2o_fb = load_isotopologue("H2O", "1H2-16O", "POKAZATEL"; wn_range=(41200, 42000), broad_fallback=true)
     @test length(h2o_fb.broadeners) == 2
   end
 

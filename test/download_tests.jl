@@ -30,6 +30,17 @@ end
 
   save_dataset(dest, "N2", "14N2", "WCCRMT"; force=false)
   save_dataset(dest, "N2", "14N2", "WCCRMT"; force=true)
+
+  # wn_range on the folder-based loader: WCCRMT has one unsegmented trans file,
+  # so it always passes the filter and the count is the same regardless of range.
+  iso_wn = load_isotopologue(dest; wn_range=(0, 10000))
+  @test length(iso_wn.states) == 58380
+  @test length(iso_wn.transitions) == 7182000
+
+  # A range that is entirely above the dataset max excludes the unsegmented file? No —
+  # unsegmented files always pass. Confirm the unsegmented file is always included.
+  iso_all = load_isotopologue(dest; wn_range=(99999, 100000))
+  @test length(iso_all.transitions) == 7182000
 end
 
 @testset "wn_range filtering" begin
@@ -46,14 +57,14 @@ end
   # Exact boundary: lower == wn_min and upper == wn_max
   @test  f("1H2-16O__BT2__00000-00100.trans.bz2", "1H2-16O", "BT2", (0, 100))
 
-  # File straddles upper bound → excluded
-  @test !f("1H2-16O__BT2__00900-01100.trans.bz2", "1H2-16O", "BT2", (0, 1000))
+  # File partially overlaps range → included (overlap semantics)
+  @test  f("1H2-16O__BT2__00900-01100.trans.bz2", "1H2-16O", "BT2", (0, 1000))
+  @test  f("1H2-16O__BT2__00000-00250.trans.bz2", "1H2-16O", "BT2", (100, 1000))
+  @test  f("1H2-16O__BT2__00500-01000.trans.bz2", "1H2-16O", "BT2", (0, 900))
 
-  # File starts below lower bound → excluded
-  @test !f("1H2-16O__BT2__00000-00250.trans.bz2", "1H2-16O", "BT2", (100, 1000))
-
-  # File ends above upper bound → excluded
-  @test !f("1H2-16O__BT2__00500-01000.trans.bz2", "1H2-16O", "BT2", (0, 900))
+  # File entirely outside range → excluded
+  @test !f("1H2-16O__BT2__00000-00100.trans.bz2", "1H2-16O", "BT2", (200, 500))
+  @test !f("1H2-16O__BT2__00600-01000.trans.bz2", "1H2-16O", "BT2", (100, 500))
 
   # Unrecognised suffix → excluded
   @test !f("1H2-16O__BT2__ERJ.trans.bz2", "1H2-16O", "BT2", (0, 99999))

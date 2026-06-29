@@ -5,17 +5,15 @@ using JSON
 """
     get_exomol_master_file(; force=false)
 
-Download the ExoMol master catalogue and return its local path.
+Download the ExoMol master catalogue to the package scratch space and return
+its local path. Use [`get_exomol_master`](@ref) to get the parsed catalogue
+directly.
 
 # Arguments
-- `force::Bool=false`: Re-download the catalogue even if it already exists in the
-  local cache.
+- `force::Bool=false`: Re-download the catalogue even if already cached.
 
 # Returns
-- `String`: Absolute path to the downloaded `exomol.all.json` file.
-
-This function is primarily intended to be used internally.  For direct access to
-the parsed catalogue use [`get_exomol_master`](@ref).
+- `String`: Absolute path to the cached `exomol.all.json` file.
 """
 function get_exomol_master_file(; force=false)
   cache_dir = @get_scratch!("exomol_master")
@@ -31,15 +29,15 @@ end
 
 
 """
-    parse_exomol_master(filepath::String)
+    parse_exomol_master(filepath)
 
-Parse the ExoMol master file and return structured data.
+Parse a locally cached ExoMol master catalogue file.
 
 # Arguments
-- `filepath::String`: Path to the master file (JSON format).
+- `filepath::AbstractString`: Path to a `.json` master catalogue file.
 
 # Returns
-- Returns the parsed JSON structure.
+- `Dict{String,Any}`: Parsed catalogue contents.
 """
 function parse_exomol_master(filepath::String)
   if !isfile(filepath)
@@ -57,14 +55,15 @@ end
 """
     get_exomol_master(; force=false)
 
-Retrieve the ExoMol master catalogue as a parsed JSON object.
+Download (if necessary) and return the ExoMol master catalogue as a parsed
+`Dict`. The catalogue lists all available molecules, isotopologues, and
+datasets.
 
 # Arguments
-- `force::Bool=false`: Re-download the catalogue even if it already exists in the
-  local cache.
+- `force::Bool=false`: Re-download the catalogue even if already cached.
 
 # Returns
-- `Dict{String,Any}`: Parsed contents of the ExoMol master catalogue.
+- `Dict{String,Any}`: Parsed contents of `exomol.all.json`.
 """
 function get_exomol_master(; force=false)
   parse_exomol_master(get_exomol_master_file(; force))

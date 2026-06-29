@@ -1,4 +1,3 @@
-using CodecBzip2
 using DataInterpolations
 
 
@@ -25,29 +24,51 @@ struct Isotopologue{S, P}
   broadeners::Dict{String, Vector{BroadeningLine}}
 end
 
+_fmt(n::Integer) = reverse(join(Iterators.partition(reverse(string(n)), 3), ','))
+
+function _read_broadeners(broad_files)
+  broadeners = Dict{String, Vector{BroadeningLine}}()
+  for bf in broad_files
+    name = replace(basename(bf), r"^.+__(.+)\.broad$" => s"\1")
+    broadeners[name] = read_broad_file(bf)
+  end
+  return broadeners
+end
+
 """
-    load_isotopologue(folder)
+    load_isotopologue(folder; wn_range=nothing)
 
 Load an isotopologue from a directory containing ExoMol dataset files.
 
 # Arguments
 - `folder::AbstractString`: Directory holding `.def.json`, `.states*`, `.trans*`,
   and optionally `.pf` files belonging to an ExoMol dataset.
+- `wn_range`: Optional wavenumber range `(wn_min, wn_max)` in cm⁻¹ to restrict
+  which transition files are loaded. Files that do not overlap the range are skipped.
 
 # Returns
 - `Isotopologue`: Parsed isotopologue data ready for analysis.
 """
-function load_isotopologue(folder; _trans_filter=nothing)
+function load_isotopologue(folder::AbstractString; wn_range=nothing)
 
   files = joinpath.(folder, readdir(folder))
 
-  def_file = files[findfirst(endswith(r".def.json"), files)]
+  def_idx = findfirst(endswith(r".def.json"), files)
+  isnothing(def_idx) && error("No .def.json file found in $folder")
+  def_file = files[def_idx]
   states_files = files[findall(endswith(r".states(.bz2|$)"), files)]
-  all_trans = files[findall(endswith(r".trans(.bz2|$)"), files)]
-  trans_files = isnothing(_trans_filter) ? all_trans : filter(_trans_filter, all_trans)
   pf_files = files[findall(endswith(".pf"), files)]
 
   def = read_def_file(def_file)
+
+  all_trans = files[findall(endswith(r".trans(.bz2|$)"), files)]
+  if isnothing(wn_range)
+    trans_files = all_trans
+  else
+    iso_slug    = def["isotopologue"]["iso_slug"]
+    dataset_name = def["dataset"]["name"]
+    trans_files = filter(f -> _trans_in_wn_range(basename(f), iso_slug, dataset_name, wn_range), all_trans)
+  end
 
   states = read_state_file(states_files[1], def)
   for states_file in states_files[2:end]
@@ -57,7 +78,7 @@ function load_isotopologue(folder; _trans_filter=nothing)
   n_trans = get(get(get(def, "dataset", Dict()), "transitions", Dict()), "number_of_transitions", 0)
   # Only use n_trans as a per-file hint when loading the full unfiltered set;
   # with a filter active the subset size is unknown, so let read_trans_file grow naturally.
-  n_per_file = (isempty(trans_files) || !isnothing(_trans_filter)) ? 0 : n_trans ÷ length(trans_files)
+  n_per_file = (isempty(trans_files) || !isnothing(wn_range)) ? 0 : n_trans ÷ length(trans_files)
   chunks = Vector{Vector{Transition}}(undef, length(trans_files))
   @sync for (i, f) in enumerate(trans_files)
     Threads.@spawn chunks[i] = read_trans_file(f, n_per_file)
@@ -71,13 +92,8 @@ function load_isotopologue(folder; _trans_filter=nothing)
   partition_function = isempty(pf_files) ? nothing : read_pf_file(pf_files[1])
 
   broad_files = files[findall(endswith(".broad"), files)]
-  broadeners = Dict{String, Vector{BroadeningLine}}()
-  for bf in broad_files
-    name = replace(basename(bf), r"^.+__(.+)\.broad$" => s"\1")
-    broadeners[name] = read_broad_file(bf)
-  end
 
-  return Isotopologue(Dict(def), states, transitions, partition_function, broadeners)
+  return Isotopologue(Dict(def), states, transitions, partition_function, _read_broadeners(broad_files))
 end
 
 """
@@ -105,19 +121,23 @@ function read_pf_file(path)
 end
 
 """
-    load_isotopologue(molecule, isotopologue, dataset; wn_range=nothing, force=false, verbose=false)
+    load_isotopologue(molecule, isotopologue, dataset; wn_range=nothing, force=false, verbose=false, broad_fallback=false)
 
-Convenience method that downloads an ExoMol dataset (if necessary) and loads it
-into an [`Isotopologue`](@ref) struct.
+Download an ExoMol dataset (if not already cached) and load it into an
+[`Isotopologue`](@ref) struct.
 
 # Arguments
 - `molecule`: Molecular formula (e.g. `"H2O"`).
-- `isotopologue`: ExoMol isotopologue identifier.
-- `dataset`: Dataset label.
-- `wn_range`: Optional wavenumber range `(wn_min, wn_max)` in cm⁻¹ to restrict
-  which transition files are downloaded and loaded.
-- `force::Bool=false`: Re-download files even if cached.
+- `isotopologue`: ExoMol isotopologue identifier (e.g. `"1H2-16O"`).
+- `dataset`: Dataset label (e.g. `"POKAZATEL"`).
+- `wn_range`: Optional wavenumber range `(wn_min, wn_max)` in cm⁻¹. Only
+  transition files that overlap the range are downloaded and loaded.
+- `force::Bool=false`: Re-download files even if already cached.
 - `verbose::Bool=false`: Forward verbose output to `Downloads.download`.
+- `broad_fallback`: When `true`, if the dataset has no broadening files the
+  package will attempt to borrow them from another cached isotopologue of the
+  same molecule. Pass an isotopologue slug string (e.g. `"1H2-16O"`) to target a
+  specific isotopologue instead of auto-detecting one.
 
 # Returns
 - `Isotopologue`: Parsed isotopologue data ready for analysis.
@@ -125,16 +145,14 @@ into an [`Isotopologue`](@ref) struct.
 function load_isotopologue(molecule, isotopologue, dataset;
     wn_range=nothing, force=false, verbose=false, broad_fallback=false)
   ds = ExoMol.get_exomol_dataset(molecule, isotopologue, dataset; wn_range, force, verbose)
-  trans_filter = isnothing(wn_range) ? nothing :
-    f -> _trans_in_wn_range(basename(f), isotopologue, dataset, wn_range)
-  iso = load_isotopologue(ds; _trans_filter=trans_filter)
+  iso = load_isotopologue(ds; wn_range)
   (broad_fallback === false || !isempty(iso.broadeners)) && return iso
   response = ExoMol._fetch_linelist_api(molecule)
   return _load_with_broad_fallback(iso, molecule, isotopologue, ds, broad_fallback, response; force, verbose)
 end
 
 """
-    load_isotopologue(molecule, isotopologue; wn_range=nothing, force=false, verbose=false)
+    load_isotopologue(molecule, isotopologue; wn_range=nothing, force=false, verbose=false, broad_fallback=false)
 
 Like the three-argument form but automatically selects the dataset marked
 `recommended` in the ExoMol API.
@@ -142,9 +160,14 @@ Like the three-argument form but automatically selects the dataset marked
 # Arguments
 - `molecule`: Molecular formula (e.g. `"H2O"`).
 - `isotopologue`: ExoMol isotopologue identifier (e.g. `"1H2-16O"`).
-- `wn_range`: Optional wavenumber range `(wn_min, wn_max)` in cm⁻¹.
-- `force::Bool=false`: Re-download files even if cached.
+- `wn_range`: Optional wavenumber range `(wn_min, wn_max)` in cm⁻¹. Only
+  transition files that overlap the range are downloaded and loaded.
+- `force::Bool=false`: Re-download files even if already cached.
 - `verbose::Bool=false`: Forward verbose output to `Downloads.download`.
+- `broad_fallback`: When `true`, if the dataset has no broadening files the
+  package will attempt to borrow them from another cached isotopologue of the
+  same molecule. Pass an isotopologue slug string to target a specific
+  isotopologue instead of auto-detecting one.
 
 # Returns
 - `Isotopologue`: Parsed isotopologue data ready for analysis.
@@ -154,11 +177,35 @@ function load_isotopologue(molecule, isotopologue;
   dataset, response = ExoMol._recommended_dataset(molecule, isotopologue)
   @info "Using recommended dataset: $dataset"
   ds = ExoMol.get_exomol_dataset(molecule, isotopologue, dataset; wn_range, force, verbose, _response=response)
-  trans_filter = isnothing(wn_range) ? nothing :
-    f -> _trans_in_wn_range(basename(f), isotopologue, dataset, wn_range)
-  iso = load_isotopologue(ds; _trans_filter=trans_filter)
+  iso = load_isotopologue(ds; wn_range)
   (broad_fallback === false || !isempty(iso.broadeners)) && return iso
   return _load_with_broad_fallback(iso, molecule, isotopologue, ds, broad_fallback, response; force, verbose)
+end
+
+function Base.show(io::IO, iso::Isotopologue)
+    iso_slug = get(get(iso.definitions, "isotopologue", Dict()), "iso_slug", "?")
+    ds_name  = get(get(iso.definitions, "dataset",      Dict()), "name",     "?")
+    print(io, "Isotopologue($iso_slug/$ds_name, $(_fmt(length(iso.states))) states, $(_fmt(length(iso.transitions))) transitions)")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", iso::Isotopologue)
+    iso_slug = get(get(iso.definitions, "isotopologue", Dict()), "iso_slug", "?")
+    ds_name  = get(get(iso.definitions, "dataset",      Dict()), "name",     "?")
+    println(io, "Isotopologue: $iso_slug / $ds_name")
+    println(io, "  States:              ", _fmt(length(iso.states)))
+    println(io, "  Transitions:         ", _fmt(length(iso.transitions)))
+    if isnothing(iso.partition_function)
+        println(io, "  Partition function:  none")
+    else
+        T = iso.partition_function.t
+        println(io, "  Partition function:  T ∈ [$(first(T)), $(last(T))] K")
+    end
+    if isempty(iso.broadeners)
+        print(io,   "  Broadeners:          none")
+    else
+        parts = ["$k ($(_fmt(length(v))) lines)" for (k, v) in sort!(collect(iso.broadeners))]
+        print(io,   "  Broadeners:          ", join(parts, ", "))
+    end
 end
 
 function _load_with_broad_fallback(iso, molecule, isotopologue, dataset_dir, broad_fallback, response; force, verbose)
@@ -181,11 +228,5 @@ function _load_with_broad_fallback(iso, molecule, isotopologue, dataset_dir, bro
   ExoMol._download_broad_files(molecule, fallback_slug, dataset_dir, fallback_def; force, verbose)
 
   broad_files = filter(f -> endswith(f, ".broad"), joinpath.(dataset_dir, readdir(dataset_dir)))
-  broadeners = Dict{String, Vector{BroadeningLine}}()
-  for bf in broad_files
-    name = replace(basename(bf), r"^.+__(.+)\.broad$" => s"\1")
-    broadeners[name] = read_broad_file(bf)
-  end
-
-  return Isotopologue(iso.definitions, iso.states, iso.transitions, iso.partition_function, broadeners)
+  return Isotopologue(iso.definitions, iso.states, iso.transitions, iso.partition_function, _read_broadeners(broad_files))
 end

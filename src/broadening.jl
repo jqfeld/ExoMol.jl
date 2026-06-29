@@ -18,6 +18,11 @@ struct BroadeningLine
   q2::Float64
 end
 
+function Base.show(io::IO, b::BroadeningLine)
+    q_str = isnan(b.q1) ? "" : isnan(b.q2) ? ", q1=$(b.q1)" : ", q1=$(b.q1), q2=$(b.q2)"
+    print(io, "BroadeningLine($(repr(b.code)), γ_L=$(b.gamma_L), n=$(b.n_air)$q_str)")
+end
+
 """
     read_broad_file(filename)
 
