@@ -37,13 +37,14 @@ Load an isotopologue from a directory containing ExoMol dataset files.
 # Returns
 - `Isotopologue`: Parsed isotopologue data ready for analysis.
 """
-function load_isotopologue(folder)
+function load_isotopologue(folder; _trans_filter=nothing)
 
   files = joinpath.(folder, readdir(folder))
 
   def_file = files[findfirst(endswith(r".def.json"), files)]
   states_files = files[findall(endswith(r".states(.bz2|$)"), files)]
-  trans_files = files[findall(endswith(r".trans(.bz2|$)"), files)]
+  all_trans = files[findall(endswith(r".trans(.bz2|$)"), files)]
+  trans_files = isnothing(_trans_filter) ? all_trans : filter(_trans_filter, all_trans)
   pf_files = files[findall(endswith(".pf"), files)]
 
   def = read_def_file(def_file)
@@ -54,13 +55,15 @@ function load_isotopologue(folder)
   end
 
   n_trans = get(get(get(def, "dataset", Dict()), "transitions", Dict()), "number_of_transitions", 0)
-  n_per_file = isempty(trans_files) ? 0 : n_trans ÷ length(trans_files)
+  # Only use n_trans as a per-file hint when loading the full unfiltered set;
+  # with a filter active the subset size is unknown, so let read_trans_file grow naturally.
+  n_per_file = (isempty(trans_files) || !isnothing(_trans_filter)) ? 0 : n_trans ÷ length(trans_files)
   chunks = Vector{Vector{Transition}}(undef, length(trans_files))
   @sync for (i, f) in enumerate(trans_files)
     Threads.@spawn chunks[i] = read_trans_file(f, n_per_file)
   end
   transitions = Vector{Transition}()
-  sizehint!(transitions, n_per_file * length(trans_files))
+  sizehint!(transitions, sum(length(c) for c in chunks; init=0))
   for chunk in chunks
     append!(transitions, chunk)
   end
@@ -122,7 +125,9 @@ into an [`Isotopologue`](@ref) struct.
 function load_isotopologue(molecule, isotopologue, dataset;
     wn_range=nothing, force=false, verbose=false, broad_fallback=false)
   ds = ExoMol.get_exomol_dataset(molecule, isotopologue, dataset; wn_range, force, verbose)
-  iso = load_isotopologue(ds)
+  trans_filter = isnothing(wn_range) ? nothing :
+    f -> _trans_in_wn_range(basename(f), isotopologue, dataset, wn_range)
+  iso = load_isotopologue(ds; _trans_filter=trans_filter)
   (broad_fallback === false || !isempty(iso.broadeners)) && return iso
   response = ExoMol._fetch_linelist_api(molecule)
   return _load_with_broad_fallback(iso, molecule, isotopologue, ds, broad_fallback, response; force, verbose)
@@ -149,7 +154,9 @@ function load_isotopologue(molecule, isotopologue;
   dataset, response = ExoMol._recommended_dataset(molecule, isotopologue)
   @info "Using recommended dataset: $dataset"
   ds = ExoMol.get_exomol_dataset(molecule, isotopologue, dataset; wn_range, force, verbose, _response=response)
-  iso = load_isotopologue(ds)
+  trans_filter = isnothing(wn_range) ? nothing :
+    f -> _trans_in_wn_range(basename(f), isotopologue, dataset, wn_range)
+  iso = load_isotopologue(ds; _trans_filter=trans_filter)
   (broad_fallback === false || !isempty(iso.broadeners)) && return iso
   return _load_with_broad_fallback(iso, molecule, isotopologue, ds, broad_fallback, response; force, verbose)
 end
