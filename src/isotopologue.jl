@@ -51,10 +51,14 @@ function load_isotopologue(folder)
 
   n_trans = get(get(get(def, "dataset", Dict()), "transitions", Dict()), "number_of_transitions", 0)
   n_per_file = isempty(trans_files) ? 0 : n_trans ÷ length(trans_files)
+  chunks = Vector{Vector{Transition}}(undef, length(trans_files))
+  @sync for (i, f) in enumerate(trans_files)
+    Threads.@spawn chunks[i] = read_trans_file(f, n_per_file)
+  end
   transitions = Vector{Transition}()
   sizehint!(transitions, n_trans)
-  for trans_file in trans_files
-    append!(transitions, read_trans_file(trans_file, n_per_file))
+  for chunk in chunks
+    append!(transitions, chunk)
   end
 
   partition_function = isempty(pf_files) ? nothing : read_pf_file(pf_files[1])
