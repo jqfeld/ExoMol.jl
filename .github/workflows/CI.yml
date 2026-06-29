@@ -24,25 +24,19 @@ jobs:
       matrix:
         version:
           - '1.11'
+          - '1.12'
           - 'pre'
         os:
           - ubuntu-latest
         arch:
           - x64
-          - x86
     steps:
-      - uses: actions/checkout@v4
-      - uses: julia-actions/setup-julia@v2
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v3
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
-      - uses: julia-actions/cache@v2
-      - uses: actions/cache@v4
-        with:
-          path: ~/.julia/scratchspaces
-          key: exomol-scratch-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('test/**') }}
-          restore-keys: |
-            exomol-scratch-${{ runner.os }}-${{ runner.arch }}-
+      - uses: julia-actions/cache@v3
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
       - uses: julia-actions/julia-processcoverage@v1
