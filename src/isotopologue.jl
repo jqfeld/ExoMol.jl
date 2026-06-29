@@ -3,7 +3,7 @@ using DataInterpolations
 
 
 """
-    Isotopologue{S, P}(definitions, states, transitions, partition_function)
+    Isotopologue{S, P}(definitions, states, transitions, partition_function, broadeners)
 
 Composite type holding all data associated with an ExoMol isotopologue.
 
@@ -13,12 +13,16 @@ Composite type holding all data associated with an ExoMol isotopologue.
 - `transitions::Vector{Transition}`: Transition catalogue.
 - `partition_function`: `LinearInterpolation` of Q(T) over temperature, or
   `nothing` if no partition function file was found.
+- `broadeners::Dict{String, Vector{BroadeningLine}}`: Pressure broadening
+  records keyed by broadener name (e.g. `"H2"`, `"He"`). Empty for datasets
+  with no broadening files.
 """
 struct Isotopologue{S, P}
   definitions::Dict
   states::Vector{S}
   transitions::Vector{Transition}
   partition_function::P
+  broadeners::Dict{String, Vector{BroadeningLine}}
 end
 
 """
@@ -56,14 +60,21 @@ function load_isotopologue(folder)
     Threads.@spawn chunks[i] = read_trans_file(f, n_per_file)
   end
   transitions = Vector{Transition}()
-  sizehint!(transitions, n_trans)
+  sizehint!(transitions, n_per_file * length(trans_files))
   for chunk in chunks
     append!(transitions, chunk)
   end
 
   partition_function = isempty(pf_files) ? nothing : read_pf_file(pf_files[1])
 
-  return Isotopologue(Dict(def), states, transitions, partition_function)
+  broad_files = files[findall(endswith(".broad"), files)]
+  broadeners = Dict{String, Vector{BroadeningLine}}()
+  for bf in broad_files
+    name = replace(basename(bf), r"^.+__(.+)\.broad$" => s"\1")
+    broadeners[name] = read_broad_file(bf)
+  end
+
+  return Isotopologue(Dict(def), states, transitions, partition_function, broadeners)
 end
 
 """
@@ -108,9 +119,13 @@ into an [`Isotopologue`](@ref) struct.
 # Returns
 - `Isotopologue`: Parsed isotopologue data ready for analysis.
 """
-function load_isotopologue(molecule, isotopologue, dataset; wn_range=nothing, force=false, verbose=false)
+function load_isotopologue(molecule, isotopologue, dataset;
+    wn_range=nothing, force=false, verbose=false, broad_fallback=false)
   ds = ExoMol.get_exomol_dataset(molecule, isotopologue, dataset; wn_range, force, verbose)
-  load_isotopologue(ds)
+  iso = load_isotopologue(ds)
+  (broad_fallback === false || !isempty(iso.broadeners)) && return iso
+  response = ExoMol._fetch_linelist_api(molecule)
+  return _load_with_broad_fallback(iso, molecule, isotopologue, ds, broad_fallback, response; force, verbose)
 end
 
 """
@@ -129,9 +144,41 @@ Like the three-argument form but automatically selects the dataset marked
 # Returns
 - `Isotopologue`: Parsed isotopologue data ready for analysis.
 """
-function load_isotopologue(molecule, isotopologue; wn_range=nothing, force=false, verbose=false)
+function load_isotopologue(molecule, isotopologue;
+    wn_range=nothing, force=false, verbose=false, broad_fallback=false)
   dataset, response = ExoMol._recommended_dataset(molecule, isotopologue)
   @info "Using recommended dataset: $dataset"
   ds = ExoMol.get_exomol_dataset(molecule, isotopologue, dataset; wn_range, force, verbose, _response=response)
-  load_isotopologue(ds)
+  iso = load_isotopologue(ds)
+  (broad_fallback === false || !isempty(iso.broadeners)) && return iso
+  return _load_with_broad_fallback(iso, molecule, isotopologue, ds, broad_fallback, response; force, verbose)
+end
+
+function _load_with_broad_fallback(iso, molecule, isotopologue, dataset_dir, broad_fallback, response; force, verbose)
+  if broad_fallback isa AbstractString
+    fallback_slug = broad_fallback
+    fallback_def = ExoMol._fetch_def_for_iso(molecule, fallback_slug, response)
+    if isnothing(fallback_def)
+      @warn "Could not retrieve broadening definition for $fallback_slug; skipping broadening fallback."
+      return iso
+    end
+  else
+    fallback_slug, fallback_def = ExoMol._resolve_fallback_iso(molecule, isotopologue, response)
+    if isnothing(fallback_slug)
+      @warn "No cached broadening data found for any other isotopologue of $molecule; skipping broadening fallback."
+      return iso
+    end
+  end
+
+  @info "Using broadening data from $fallback_slug"
+  ExoMol._download_broad_files(molecule, fallback_slug, dataset_dir, fallback_def; force, verbose)
+
+  broad_files = filter(f -> endswith(f, ".broad"), joinpath.(dataset_dir, readdir(dataset_dir)))
+  broadeners = Dict{String, Vector{BroadeningLine}}()
+  for bf in broad_files
+    name = replace(basename(bf), r"^.+__(.+)\.broad$" => s"\1")
+    broadeners[name] = read_broad_file(bf)
+  end
+
+  return Isotopologue(iso.definitions, iso.states, iso.transitions, iso.partition_function, broadeners)
 end

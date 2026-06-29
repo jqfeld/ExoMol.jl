@@ -27,7 +27,14 @@ function _fortran_to_type(str)
 end
 
 
-_parse_field(type, value) = type <: AbstractString ? value : parse(type, value)
+function _parse_field(type, value)
+  type <: AbstractString && return String(value)
+  if lowercase(strip(value)) == "nan"
+    type <: AbstractFloat && return type(NaN)
+    type <: Integer       && return type(-2)  # ExoMol convention: -2 = not applicable
+  end
+  parse(type, value)
+end
 
 """
     read_state_file(filename[, def])

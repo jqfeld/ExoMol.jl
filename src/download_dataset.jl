@@ -55,6 +55,9 @@ function get_exomol_dataset(molecule, isotopologue, dataset;
     @info "Obtained partition function file"
   end
 
+  def = JSON.parsefile(def_path)
+  _download_broad_files(molecule, isotopologue, dataset_dir, def; force, verbose)
+
   trans_urls = _fetch_trans_urls(molecule, isotopologue, dataset; wn_range, _response)
   pending = force ? trans_urls : filter(url -> !isfile(joinpath(dataset_dir, basename(url))), trans_urls)
 
@@ -160,6 +163,80 @@ function _recommended_dataset(molecule, isotopologue)
   end
 
   error("No recommended dataset found for $(molecule) / $(isotopologue)")
+end
+
+function _download_broad_files(molecule, iso_slug, dest_dir, def; force=false, verbose=false)
+  for (_, broad_info) in get(def, "broad", Dict())
+    isa(broad_info, Dict) || continue
+    filename = broad_info["filename"]
+    broad_path = joinpath(dest_dir, filename)
+    if !isfile(broad_path) || force
+      Downloads.download(
+        "https://www.exomol.com/db/$(molecule)/$(iso_slug)/$(filename)",
+        broad_path; verbose)
+      @info "Obtained broadening file: $filename"
+    end
+  end
+end
+
+function _find_cached_def(molecule, iso_slug)
+  datasets_dir = @get_scratch!("exomol_datasets")
+  iso_dir = joinpath(datasets_dir, molecule, iso_slug)
+  isdir(iso_dir) || return nothing
+  for ds_name in readdir(iso_dir)
+    def_path = joinpath(iso_dir, ds_name, "$(iso_slug)__$(ds_name).def.json")
+    isfile(def_path) && return JSON.parsefile(def_path)
+  end
+  return nothing
+end
+
+function _fetch_def_for_iso(molecule, iso_slug, response)
+  cached = _find_cached_def(molecule, iso_slug)
+  isnothing(cached) || return cached
+  best_ds = nothing
+  for (_, iso_data) in response
+    isa(iso_data, Dict) && haskey(iso_data, "linelist") || continue
+    for (ds_name, ds_info) in iso_data["linelist"]
+      isa(ds_info, Dict) || continue
+      any(f -> isa(f, Dict) && occursin("/$(iso_slug)/", get(f, "url", "")), get(ds_info, "files", [])) || continue
+      if isnothing(best_ds) || get(ds_info, "recommended", false)
+        best_ds = ds_name
+      end
+    end
+  end
+  isnothing(best_ds) && return nothing
+  buf = IOBuffer()
+  try
+    Downloads.download(
+      "https://www.exomol.com/db/$(molecule)/$(iso_slug)/$(best_ds)/$(iso_slug)__$(best_ds).def.json",
+      buf)
+  catch
+    return nothing
+  end
+  return JSON.parse(String(take!(buf)))
+end
+
+function _resolve_fallback_iso(molecule, current_iso, response)
+  seen = Set{String}()
+  for (_, iso_data) in response
+    isa(iso_data, Dict) && haskey(iso_data, "linelist") || continue
+    for (_, ds_info) in iso_data["linelist"]
+      isa(ds_info, Dict) || continue
+      files = get(ds_info, "files", [])
+      isempty(files) && continue
+      url = get(files[1], "url", "")
+      m = match(r"exomol\.com/db/[^/]+/([^/]+)/", url)
+      isnothing(m) && continue
+      slug = m.captures[1]
+      (slug == current_iso || slug in seen) && continue
+      push!(seen, slug)
+      def = _find_cached_def(molecule, slug)
+      isnothing(def) && continue
+      get(get(def, "dataset", Dict()), "num_pressure_broadeners", 0) > 0 || continue
+      return slug, def
+    end
+  end
+  return nothing, nothing
 end
 
 function _trans_in_wn_range(filename, isotopologue, dataset, wn_range)
