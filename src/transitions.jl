@@ -33,13 +33,14 @@ function read_trans_file(filename, n=0)
   n > 0 && sizehint!(transitions, n)
 
   _open_exomol_file(filename) do io
-    for line in eachline(io)
-      strings = split(line)
+    content = read(io, String)
+    for line in eachsplit(content, '\n')
+      isempty(line) && continue
       push!(transitions, Transition(
-        parse(Int, strings[1]),
-        parse(Int, strings[2]),
-        parse(Float64, strings[3]),
-        parse(Float64, strings[4])
+        parse(Int,     @view line[1:12]),
+        parse(Int,     @view line[14:25]),
+        parse(Float64, @view line[27:36]),
+        length(line) >= 38 ? parse(Float64, @view line[38:end]) : 0.0
       ))
     end
   end
