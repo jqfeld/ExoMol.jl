@@ -4,9 +4,11 @@ CurrentModule = ExoMol
 
 # Download API
 
-These functions handle fetching data from the ExoMol web API and caching it in
-Julia's scratch space (`~/.julia/scratchspaces/`). The cache persists across
-Julia sessions; files are only re-downloaded when `force=true` is passed.
+These functions handle fetching data from the ExoMol web API. By default files
+are cached in Julia's scratch space (`~/.julia/scratchspaces/`) and persist
+across Julia sessions; files are only re-downloaded when `force=true` is passed.
+Pass `dest` to write directly into a directory of your choice instead, avoiding
+a duplicate copy in the scratch space.
 
 ## Master catalogue
 

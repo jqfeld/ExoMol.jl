@@ -121,7 +121,7 @@ function read_pf_file(path)
 end
 
 """
-    load_isotopologue(molecule, isotopologue, dataset; wn_range=nothing, force=false, verbose=false, broad_fallback=false)
+    load_isotopologue(molecule, isotopologue, dataset; dest=nothing, wn_range=nothing, force=false, verbose=false, broad_fallback=false)
 
 Download an ExoMol dataset (if not already cached) and load it into an
 [`Isotopologue`](@ref) struct.
@@ -130,6 +130,10 @@ Download an ExoMol dataset (if not already cached) and load it into an
 - `molecule`: Molecular formula (e.g. `"H2O"`).
 - `isotopologue`: ExoMol isotopologue identifier (e.g. `"1H2-16O"`).
 - `dataset`: Dataset label (e.g. `"POKAZATEL"`).
+- `dest::Union{AbstractString,Nothing}=nothing`: Directory to download files into.
+  When `nothing` (default) the package scratch space is used. When a path is
+  given, files are written directly into that directory so no second copy is kept
+  in the scratch space. See [`get_exomol_dataset`](@ref) for details.
 - `wn_range`: Optional wavenumber range `(wn_min, wn_max)` in cm⁻¹. Only
   transition files that overlap the range are downloaded and loaded.
 - `force::Bool=false`: Re-download files even if already cached.
@@ -143,8 +147,8 @@ Download an ExoMol dataset (if not already cached) and load it into an
 - `Isotopologue`: Parsed isotopologue data ready for analysis.
 """
 function load_isotopologue(molecule, isotopologue, dataset;
-    wn_range=nothing, force=false, verbose=false, broad_fallback=false)
-  ds = ExoMol.get_exomol_dataset(molecule, isotopologue, dataset; wn_range, force, verbose)
+    dest=nothing, wn_range=nothing, force=false, verbose=false, broad_fallback=false)
+  ds = ExoMol.get_exomol_dataset(molecule, isotopologue, dataset; dest, wn_range, force, verbose)
   iso = load_isotopologue(ds; wn_range)
   (broad_fallback === false || !isempty(iso.broadeners)) && return iso
   response = ExoMol._fetch_linelist_api(molecule)
@@ -152,7 +156,7 @@ function load_isotopologue(molecule, isotopologue, dataset;
 end
 
 """
-    load_isotopologue(molecule, isotopologue; wn_range=nothing, force=false, verbose=false, broad_fallback=false)
+    load_isotopologue(molecule, isotopologue; dest=nothing, wn_range=nothing, force=false, verbose=false, broad_fallback=false)
 
 Like the three-argument form but automatically selects the dataset marked
 `recommended` in the ExoMol API.
@@ -160,6 +164,10 @@ Like the three-argument form but automatically selects the dataset marked
 # Arguments
 - `molecule`: Molecular formula (e.g. `"H2O"`).
 - `isotopologue`: ExoMol isotopologue identifier (e.g. `"1H2-16O"`).
+- `dest::Union{AbstractString,Nothing}=nothing`: Directory to download files into.
+  When `nothing` (default) the package scratch space is used. When a path is
+  given, files are written directly into that directory so no second copy is kept
+  in the scratch space. See [`get_exomol_dataset`](@ref) for details.
 - `wn_range`: Optional wavenumber range `(wn_min, wn_max)` in cm⁻¹. Only
   transition files that overlap the range are downloaded and loaded.
 - `force::Bool=false`: Re-download files even if already cached.
@@ -173,10 +181,10 @@ Like the three-argument form but automatically selects the dataset marked
 - `Isotopologue`: Parsed isotopologue data ready for analysis.
 """
 function load_isotopologue(molecule, isotopologue;
-    wn_range=nothing, force=false, verbose=false, broad_fallback=false)
+    dest=nothing, wn_range=nothing, force=false, verbose=false, broad_fallback=false)
   dataset, response = ExoMol._recommended_dataset(molecule, isotopologue)
   @info "Using recommended dataset: $dataset"
-  ds = ExoMol.get_exomol_dataset(molecule, isotopologue, dataset; wn_range, force, verbose, _response=response)
+  ds = ExoMol.get_exomol_dataset(molecule, isotopologue, dataset; dest, wn_range, force, verbose, _response=response)
   iso = load_isotopologue(ds; wn_range)
   (broad_fallback === false || !isempty(iso.broadeners)) && return iso
   return _load_with_broad_fallback(iso, molecule, isotopologue, ds, broad_fallback, response; force, verbose)

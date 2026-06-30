@@ -33,14 +33,20 @@ end
 
 
 """
-    get_exomol_dataset(molecule, isotopologue, dataset; wn_range=nothing, force=false, verbose=false)
+    get_exomol_dataset(molecule, isotopologue, dataset; dest=nothing, wn_range=nothing, force=false, verbose=false)
 
-Download a specific ExoMol dataset and cache it in the package scratch space.
+Download a specific ExoMol dataset and store it locally.
 
 # Arguments
 - `molecule`: Molecular formula (e.g. `"H2O"`).
 - `isotopologue`: Isotopologue identifier as used by ExoMol (e.g. `"1H2-16O"`).
 - `dataset`: Dataset label (e.g. `"POKAZATEL"`).
+- `dest::Union{AbstractString,Nothing}=nothing`: Directory to download files into.
+  When `nothing` (default) files are stored in the package scratch space
+  (`~/.julia/scratchspaces/…/exomol_datasets/molecule/isotopologue/dataset/`).
+  When a path is given, files are written directly into that directory (created
+  if it does not exist) with no additional sub-directories appended. Use this to
+  avoid keeping a second copy of a large dataset in the scratch space.
 - `wn_range`: Wavenumber range `(wn_min, wn_max)` in cm⁻¹. When provided, only
   transition files that overlap `[wn_min, wn_max]` are downloaded. Unsegmented
   transition files (those without a wavenumber range in their filename) are always
@@ -50,15 +56,19 @@ Download a specific ExoMol dataset and cache it in the package scratch space.
 - `verbose::Bool=false`: Forward verbose output to `Downloads.download`.
 
 # Returns
-- `String`: Path to the local cache directory containing the downloaded files
+- `String`: Path to the directory containing the downloaded files
   (`.def.json`, `.states.bz2`, `.pf`, `.broad`, and `.trans.bz2` files).
   This path can be passed directly to [`load_isotopologue`](@ref).
 """
 function get_exomol_dataset(molecule, isotopologue, dataset;
-  wn_range=nothing, force=false, verbose=false, _response=nothing)
+  dest=nothing, wn_range=nothing, force=false, verbose=false, _response=nothing)
 
-  datasets_dir = @get_scratch!("exomol_datasets")
-  dataset_dir = joinpath(datasets_dir, molecule, isotopologue, dataset)
+  if isnothing(dest)
+    datasets_dir = @get_scratch!("exomol_datasets")
+    dataset_dir = joinpath(datasets_dir, molecule, isotopologue, dataset)
+  else
+    dataset_dir = dest
+  end
   def_path = joinpath(dataset_dir, _data_filename(isotopologue, dataset, "def.json"))
 
   if !isfile(def_path) || force

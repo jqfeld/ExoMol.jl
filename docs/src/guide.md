@@ -82,19 +82,42 @@ The same `wn_range` keyword works when loading from a local folder:
 iso = load_isotopologue("/data/exomol/H2O/1H2-16O/POKAZATEL"; wn_range=(1000, 4000))
 ```
 
-## Saving to a local directory
+## Downloading to a user directory
 
-[`save_dataset`](@ref) copies a cached dataset out of the scratch space to a
-directory you control, which is useful for archiving or sharing:
+By default ExoMol files land in Julia's scratch space, which means a separate
+copy on disk if you also want the files in a specific location. Pass `dest` to
+download directly into the directory of your choice:
+
+```julia
+iso = load_isotopologue("N2", "14N2", "WCCRMT"; dest="/data/exomol/N2")
+```
+
+Files are written straight into `dest` (created if it does not exist) with no
+additional sub-directories appended. The same path is returned by
+[`get_exomol_dataset`](@ref) and can be loaded separately:
+
+```julia
+dir = get_exomol_dataset("N2", "14N2", "WCCRMT"; dest="/data/exomol/N2")
+iso = load_isotopologue(dir)
+```
+
+`dest` combines naturally with `wn_range`:
+
+```julia
+iso = load_isotopologue("H2O", "1H2-16O", "POKAZATEL";
+                        dest="/data/exomol/H2O", wn_range=(1000, 4000))
+```
+
+## Copying a cached dataset
+
+If the dataset is already in the scratch space and you want to archive or share
+it, [`save_dataset`](@ref) copies it to a directory you control:
 
 ```julia
 save_dataset("/data/exomol", "N2", "14N2", "WCCRMT")
 # Then load from the saved path:
 iso = load_isotopologue("/data/exomol")
 ```
-
-The saved layout is identical to what `load_isotopologue` expects, so the two
-compose naturally.
 
 If the dataset was downloaded with a `wn_range` filter, only the downloaded
 transition files are copied.
