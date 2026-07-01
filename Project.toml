@@ -1,7 +1,7 @@
 name = "ExoMol"
 uuid = "ad33b8ab-ae41-41db-81f7-3b0c63c48de0"
-version = "0.0.1"
-authors = ["Jan Kuhfeld <jan.kuhfeld@rub.de> and contributors"]
+version = "0.1.0"
+authors = ["Jan Kuhfeld <jankuhfeld@plasma-matters.nl> and contributors"]
 
 [deps]
 CodecBzip2 = "523fee87-0ab8-5b00-afb7-3ecf72e48cfd"
