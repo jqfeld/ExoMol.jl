@@ -10,6 +10,9 @@ lists directly from Julia. The package wraps the official catalogue,
 transitions and state files in convenient Julia types for further analysis or
 visualisation.
 
+> **Disclaimer:** This is an independent, community-maintained package and is
+> not affiliated with or endorsed by the ExoMol project or its maintainers.
+
 ## Installation
 
 Install the package from the Julia package manager:

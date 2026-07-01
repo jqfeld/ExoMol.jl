@@ -185,13 +185,13 @@ function _recommended_dataset(molecule, isotopologue)
     !haskey(iso_data, "linelist") && continue
     linelist = iso_data["linelist"]
     iso_match = any(
-      isa(info, Dict) && haskey(info, "files") &&
+      isa(info, AbstractDict) && haskey(info, "files") &&
       any(f -> occursin("/$(isotopologue)/", f["url"]), info["files"])
       for (_, info) in linelist
     )
     iso_match || continue
     for (name, info) in linelist
-      isa(info, Dict) && get(info, "recommended", false) && return name, response
+      isa(info, AbstractDict) && get(info, "recommended", false) && return name, response
     end
   end
 
@@ -200,7 +200,7 @@ end
 
 function _download_broad_files(molecule, iso_slug, dest_dir, def; force=false, verbose=false)
   for (_, broad_info) in get(def, "broad", Dict())
-    isa(broad_info, Dict) || continue
+    isa(broad_info, AbstractDict) || continue
     filename = broad_info["filename"]
     broad_path = joinpath(dest_dir, filename)
     if !isfile(broad_path) || force
@@ -228,10 +228,10 @@ function _fetch_def_for_iso(molecule, iso_slug, response)
   isnothing(cached) || return cached
   best_ds = nothing
   for (_, iso_data) in response
-    isa(iso_data, Dict) && haskey(iso_data, "linelist") || continue
+    isa(iso_data, AbstractDict) && haskey(iso_data, "linelist") || continue
     for (ds_name, ds_info) in iso_data["linelist"]
-      isa(ds_info, Dict) || continue
-      any(f -> isa(f, Dict) && occursin("/$(iso_slug)/", get(f, "url", "")), get(ds_info, "files", [])) || continue
+      isa(ds_info, AbstractDict) || continue
+      any(f -> isa(f, AbstractDict) && occursin("/$(iso_slug)/", get(f, "url", "")), get(ds_info, "files", [])) || continue
       if isnothing(best_ds) || get(ds_info, "recommended", false)
         best_ds = ds_name
       end
@@ -252,9 +252,9 @@ end
 function _resolve_fallback_iso(molecule, current_iso, response)
   seen = Set{String}()
   for (_, iso_data) in response
-    isa(iso_data, Dict) && haskey(iso_data, "linelist") || continue
+    isa(iso_data, AbstractDict) && haskey(iso_data, "linelist") || continue
     for (_, ds_info) in iso_data["linelist"]
-      isa(ds_info, Dict) || continue
+      isa(ds_info, AbstractDict) || continue
       files = get(ds_info, "files", [])
       isempty(files) && continue
       url = get(files[1], "url", "")
