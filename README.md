@@ -4,6 +4,7 @@
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://jqfeld.github.io/ExoMol.jl/dev/)
 [![Build Status](https://github.com/jqfeld/ExoMol.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/jqfeld/ExoMol.jl/actions/workflows/CI.yml?query=branch%3Amain)
 [![Coverage](https://codecov.io/gh/jqfeld/ExoMol.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/jqfeld/ExoMol.jl)
+[![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 
 Utilities for downloading and parsing [ExoMol](https://www.exomol.com/) line
 lists directly from Julia. The package wraps the official catalogue,
