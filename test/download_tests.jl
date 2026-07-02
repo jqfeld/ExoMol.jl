@@ -27,7 +27,7 @@ end
 
   iso = load_isotopologue(dest)
   @test length(iso.states) == 58380
-  @test length(iso.transitions) == 7182000
+  @test length(iso.transitions) == 8389500
   @test isempty(iso.broadeners)
 
   save_dataset(dest, "N2", "14N2", "WCCRMT"; force=false)

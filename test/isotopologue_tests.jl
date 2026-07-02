@@ -31,7 +31,7 @@ using ExoMol
   end
 
   @testset "transitions" begin
-    @test length(n2.transitions) == 7182000
+    @test length(n2.transitions) == 8389500
     @test n2.transitions[1].lower_id    == 27271
     @test n2.transitions[1].upper_id    ==  6853
     @test n2.transitions[1].wavenumber  == 0.000147
