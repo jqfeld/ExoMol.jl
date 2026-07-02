@@ -22,6 +22,8 @@ end
   @test "14N2__WCCRMT.states.bz2" in saved
   @test "14N2__WCCRMT.trans.bz2" in saved
   @test "14N2__WCCRMT.pf" in saved
+  # ERJ file has no 'size' key in the API response — must not be silently dropped
+  @test "14N2__WCCRMT__ERJ.trans.bz2" in saved
 
   iso = load_isotopologue(dest)
   @test length(iso.states) == 58380
@@ -41,6 +43,15 @@ end
   # unsegmented files always pass. Confirm the unsegmented file is always included.
   iso_all = load_isotopologue(dest; wn_range=(99999, 100000))
   @test length(iso_all.transitions) == 7182000
+end
+
+@testset "trans urls include size-less files" begin
+  urls = ExoMol._fetch_trans_urls("N2", "14N2", "WCCRMT")
+  names = basename.(getfield.(urls, :url))
+  @test "14N2__WCCRMT.trans.bz2" in names
+  @test "14N2__WCCRMT__ERJ.trans.bz2" in names
+  erj = urls[findfirst(u -> basename(u.url) == "14N2__WCCRMT__ERJ.trans.bz2", urls)]
+  @test isnothing(erj.size)
 end
 
 @testset "wn_range filtering" begin

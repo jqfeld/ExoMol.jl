@@ -97,8 +97,9 @@ function get_exomol_dataset(molecule, isotopologue, dataset;
     @info "Using cached dataset."
   else
     n = length(pending)
-    total = sum(t.size for t in pending)
-    @info "Downloading $n transition file(s) ($(_human_bytes(total)) total)..."
+    known = sum(t.size for t in pending if !isnothing(t.size); init=0)
+    size_str = known > 0 ? " ($(_human_bytes(known))$(any(isnothing(t.size) for t in pending) ? "+" : "") total)" : ""
+    @info "Downloading $n transition file(s)$size_str..."
     for (i, t) in enumerate(pending)
       fname = basename(t.url)
       _download_with_progress("https://www." * t.url, joinpath(dataset_dir, fname);
@@ -170,9 +171,9 @@ function _fetch_trans_urls(molecule, isotopologue, dataset; wn_range=nothing, _r
     !haskey(iso_data["linelist"], dataset) && continue
     files = iso_data["linelist"][dataset]["files"]
     any(f -> occursin("/$(isotopologue)/", f["url"]), files) || continue
-    trans = filter(f -> endswith(f["url"], ".trans.bz2") && haskey(f, "size"), files)
-    isnothing(wn_range) && return [(url=f["url"], size=f["size"]) for f in trans]
-    return [(url=f["url"], size=f["size"]) for f in trans if _trans_in_wn_range(basename(f["url"]), isotopologue, dataset, wn_range)]
+    trans = filter(f -> endswith(f["url"], ".trans.bz2"), files)
+    isnothing(wn_range) && return [(url=f["url"], size=get(f, "size", nothing)) for f in trans]
+    return [(url=f["url"], size=get(f, "size", nothing)) for f in trans if _trans_in_wn_range(basename(f["url"]), isotopologue, dataset, wn_range)]
   end
 
   error("Dataset $(dataset) for isotopologue $(isotopologue) not found in ExoMol API")
