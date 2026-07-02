@@ -22,9 +22,9 @@ function _download_with_progress(url, dest; desc="", verbose=false)
         filled = round(Int, frac * bar_width)
         bar = "█"^filled * "░"^(bar_width - filled)
         pct = round(Int, 100 * frac)
-        print(stderr, "\r$(desc) [$(bar)] $(pct)%  $(_human_bytes(now)) / $(_human_bytes(total))")
+        print(stderr, "\e[2K\r$(desc) [$(bar)] $(pct)%  $(_human_bytes(now)) / $(_human_bytes(total))")
       else
-        print(stderr, "\r$(desc)  $(_human_bytes(now)) downloaded…")
+        print(stderr, "\e[2K\r$(desc)  $(_human_bytes(now)) downloaded…")
       end
       flush(stderr)
     end)
