@@ -33,16 +33,23 @@ end
   save_dataset(dest, "N2", "14N2", "WCCRMT"; force=false)
   save_dataset(dest, "N2", "14N2", "WCCRMT"; force=true)
 
-  # wn_range on the folder-based loader: WCCRMT has one unsegmented trans file,
-  # so it always passes the filter and the count is the same regardless of range.
+  # wn_range on the folder-based loader: WCCRMT's unsegmented main trans file
+  # always passes the filter regardless of range. Its supplementary
+  # "__ERJ.trans.bz2" file (added later, contains the C-B system — see the
+  # "wn_range filtering" testset below) doesn't match any recognized
+  # filename pattern either, so it's *also* always included (can't determine
+  # its coverage from the name, and the safe default is to include rather
+  # than silently drop in-range data) — regardless of range, both files are
+  # loaded and the count is the same as loading with no filter at all.
   iso_wn = load_isotopologue(dest; wn_range=(0, 10000))
   @test length(iso_wn.states) == 58380
-  @test length(iso_wn.transitions) == 7182000
+  @test length(iso_wn.transitions) == 8389500
 
-  # A range that is entirely above the dataset max excludes the unsegmented file? No —
-  # unsegmented files always pass. Confirm the unsegmented file is always included.
+  # Even a range entirely above the dataset max includes both files, for the
+  # same reason: the unsegmented file always passes, and the unrecognized
+  # "__ERJ" suffix can't be excluded on name alone.
   iso_all = load_isotopologue(dest; wn_range=(99999, 100000))
-  @test length(iso_all.transitions) == 7182000
+  @test length(iso_all.transitions) == 8389500
 end
 
 @testset "trans urls include size-less files" begin
@@ -77,8 +84,15 @@ end
   @test !f("1H2-16O__BT2__00000-00100.trans.bz2", "1H2-16O", "BT2", (200, 500))
   @test !f("1H2-16O__BT2__00600-01000.trans.bz2", "1H2-16O", "BT2", (100, 500))
 
-  # Unrecognised suffix → excluded
-  @test !f("1H2-16O__BT2__ERJ.trans.bz2", "1H2-16O", "BT2", (0, 99999))
+  # Unrecognised suffix → included (can't determine its coverage from the
+  # name alone, so the safe default is to include it rather than risk
+  # silently dropping in-range data — see N2/WCCRMT's real "__ERJ" file,
+  # which turned out to hold an entire band system omitted by this filter
+  # before this behavior was fixed), and a warning is emitted so the caller
+  # knows a heuristic decision was made.
+  @test_logs (:warn, r"doesn't match a recognized wavenumber-range naming pattern") begin
+    @test f("1H2-16O__BT2__ERJ.trans.bz2", "1H2-16O", "BT2", (0, 99999))
+  end
 end
 
 @testset "read_broad_file" begin
