@@ -24,11 +24,14 @@ end
   @test "14N2__WCCRMT.pf" in saved
   # ERJ file has no 'size' key in the API response — must not be silently dropped
   @test "14N2__WCCRMT__ERJ.trans.bz2" in saved
+  # def.json advertises no broadeners, but the server has an unadvertised
+  # "air" .broad file — get_exomol_dataset probes for it directly.
+  @test "14N2__air.broad" in saved
 
   iso = load_isotopologue(dest)
   @test length(iso.states) == 58380
   @test length(iso.transitions) == 8389500
-  @test isempty(iso.broadeners)
+  @test collect(keys(iso.broadeners)) == ["air"]
 
   save_dataset(dest, "N2", "14N2", "WCCRMT"; force=false)
   save_dataset(dest, "N2", "14N2", "WCCRMT"; force=true)
@@ -93,6 +96,22 @@ end
   @test_logs (:warn, r"doesn't match a recognized wavenumber-range naming pattern") begin
     @test f("1H2-16O__BT2__ERJ.trans.bz2", "1H2-16O", "BT2", (0, 99999))
   end
+end
+
+@testset "_download_broad_files probes unadvertised partners" begin
+  # H2O/1H2-16O/POKAZATEL's def.json only advertises H2 and He, but the
+  # server also has an "air" file that isn't mentioned anywhere in it.
+  def = Dict("broad" => Dict(
+    "H2" => Dict("filename" => "1H2-16O__H2.broad"),
+    "He" => Dict("filename" => "1H2-16O__He.broad"),
+  ))
+  dest = mktempdir()
+  ExoMol._download_broad_files("H2O", "1H2-16O", dest, def)
+  files = sort(readdir(dest))
+  @test "1H2-16O__H2.broad" in files
+  @test "1H2-16O__He.broad" in files
+  @test "1H2-16O__air.broad" in files
+  @test "1H2-16O__self.broad" ∉ files
 end
 
 @testset "read_broad_file" begin

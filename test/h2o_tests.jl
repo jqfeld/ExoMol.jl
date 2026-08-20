@@ -47,9 +47,13 @@ using ExoMol
   @testset "broadeners" begin
     # def.json lists H2 and He broadeners with filenames; CO2/H2O entries counted
     # in num_pressure_broadeners refer to recipe variants, not separate files.
-    @test length(h2o.broadeners) == 2
+    # "air" has a .broad file on the server too, even though def.json never
+    # mentions it — get_exomol_dataset probes for it directly (see
+    # _EXOMOL_BROADENING_PARTNERS in download_dataset.jl).
+    @test length(h2o.broadeners) == 3
     @test haskey(h2o.broadeners, "H2")
     @test haskey(h2o.broadeners, "He")
+    @test haskey(h2o.broadeners, "air")
 
     h2 = h2o.broadeners["H2"]
     @test length(h2)  == 151
@@ -68,12 +72,19 @@ using ExoMol
     @test he[1].n_air   ≈ 0.462
     @test he[1].q1      == 0.0
     @test he[1].q2      == 1.0
+
+    air = h2o.broadeners["air"]
+    @test length(air)   == 10913
+    @test air[1].code    == "a5"
+    @test air[1].gamma_L ≈ 0.1045
+    @test air[1].n_air   ≈ 0.750
+    @test all(r -> !isnan(r.gamma_L) && !isnan(r.n_air), air)
   end
 
   @testset "broad_fallback no-op" begin
     # Isotopologue already has broadeners; broad_fallback returns early
     h2o_fb = load_isotopologue("H2O", "1H2-16O", "POKAZATEL"; wn_range=(41200, 42000), broad_fallback=true)
-    @test length(h2o_fb.broadeners) == 2
+    @test length(h2o_fb.broadeners) == 3
   end
 
 end

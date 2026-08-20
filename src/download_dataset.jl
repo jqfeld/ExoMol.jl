@@ -199,16 +199,42 @@ function _recommended_dataset(molecule, isotopologue)
   error("No recommended dataset found for $(molecule) / $(isotopologue)")
 end
 
+# Common ExoMol broadening-partner codes (ExoMol 2024 release paper, Table 2).
+# .def.json only advertises a subset of the partners that actually have a
+# .broad file on the server (e.g. H2O/1H2-16O has an "air" file that no
+# .def.json on exomol.com mentions). RADIS works around this by probing every
+# known partner code directly; we do the same below.
+const _EXOMOL_BROADENING_PARTNERS = [
+  "air", "self", "H2", "He", "Ar", "CH4", "CO", "CO2", "H2O", "N2", "NH3", "NO", "O2", "CS",
+]
+
 function _download_broad_files(molecule, iso_slug, dest_dir, def; force=false, verbose=false)
+  advertised = Set{String}()
   for (_, broad_info) in get(def, "broad", Dict())
     isa(broad_info, AbstractDict) || continue
     filename = broad_info["filename"]
+    push!(advertised, filename)
     broad_path = joinpath(dest_dir, filename)
     if !isfile(broad_path) || force
       Downloads.download(
         "https://www.exomol.com/db/$(molecule)/$(iso_slug)/$(filename)",
         broad_path; verbose)
       @info "Obtained broadening file: $filename"
+    end
+  end
+
+  for partner in _EXOMOL_BROADENING_PARTNERS
+    filename = "$(iso_slug)__$(partner).broad"
+    filename in advertised && continue
+    broad_path = joinpath(dest_dir, filename)
+    (!force && isfile(broad_path)) && continue
+    try
+      Downloads.download(
+        "https://www.exomol.com/db/$(molecule)/$(iso_slug)/$(filename)",
+        broad_path; verbose)
+      @info "Obtained broadening file: $filename"
+    catch e
+      e isa Downloads.RequestError || rethrow()
     end
   end
 end

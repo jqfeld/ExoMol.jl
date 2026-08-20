@@ -49,17 +49,33 @@ using ExoMol
   end
 
   @testset "broadeners" begin
-    @test isempty(n2.broadeners)
+    # N2/14N2/WCCRMT's def.json advertises no broadeners at all, but the
+    # server has an "air" .broad file anyway — get_exomol_dataset probes for
+    # it directly (see _EXOMOL_BROADENING_PARTNERS in download_dataset.jl).
+    @test collect(keys(n2.broadeners)) == ["air"]
   end
 end
 
 @testset "broad_fallback" begin
+  # Exercise _load_with_broad_fallback directly against a synthetic
+  # empty-broadeners Isotopologue, independent of N2/14N2 actually having
+  # broadening data available (it does, via "air" — see the Nitrogen
+  # "broadeners" testset above).
+  dataset_dir = get_exomol_dataset("N2", "14N2", "WCCRMT")
+  n2 = load_isotopologue(dataset_dir)
+  empty_iso = ExoMol.Isotopologue(
+    n2.definitions, n2.states, n2.transitions, n2.partition_function,
+    Dict{String,Vector{BroadeningLine}}())
+  response = ExoMol._fetch_linelist_api("N2")
+
   # auto-detect: no other N2 isotopologue with cached broadeners → warn and return empty
-  n2_fb = @test_logs (:warn, r"No cached broadening") min_level=Base.CoreLogging.Warn load_isotopologue("N2", "14N2"; broad_fallback=true)
+  n2_fb = @test_logs (:warn, r"No cached broadening") min_level=Base.CoreLogging.Warn ExoMol._load_with_broad_fallback(
+    empty_iso, "N2", "14N2", dataset_dir, true, response; force=false, verbose=false)
   @test isempty(n2_fb.broadeners)
 
   # explicit unknown slug: not found → warn and return empty
-  n2_fb2 = @test_logs (:warn, r"Could not retrieve") min_level=Base.CoreLogging.Warn load_isotopologue("N2", "14N2"; broad_fallback="nonexistent_iso")
+  n2_fb2 = @test_logs (:warn, r"Could not retrieve") min_level=Base.CoreLogging.Warn ExoMol._load_with_broad_fallback(
+    empty_iso, "N2", "14N2", dataset_dir, "nonexistent_iso", response; force=false, verbose=false)
   @test isempty(n2_fb2.broadeners)
 end
 
