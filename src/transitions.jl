@@ -25,8 +25,15 @@ end
 
 Read an ExoMol `.trans` or `.trans.bz2` file and return its transition records.
 
-Columns are parsed by fixed byte position (1–12, 14–25, 27–36, 38–end) rather
-than by splitting on whitespace, which avoids per-line allocations.
+The upper/lower state ID columns are parsed by fixed byte position (1–12,
+14–25) — stable across every dataset seen so far — avoiding a per-line
+allocation for those two fields. The A coefficient and wavenumber columns
+are parsed via `split` on the line's remainder instead: their padding width
+is *not* fixed across datasets (OH/MYTHOS pads the A
+field by 2 spaces where e.g. SiO/EBJT pads by 1, silently truncating the A
+column's last digit under a hardcoded byte offset tuned to one dataset's
+width), and `.def.json`'s `"transitions"` section, unlike `"states"`, does
+not declare per-field widths to read that padding from.
 
 # Arguments
 - `filename::AbstractString`: Path to a `.trans` or `.trans.bz2` file.
@@ -43,11 +50,12 @@ function read_trans_file(filename, n=0)
     content = read(io, String)
     for line in eachsplit(content, '\n')
       isempty(line) && continue
+      rest = split(@view line[26:end])
       push!(transitions, Transition(
         parse(Int,     @view line[1:12]),
         parse(Int,     @view line[14:25]),
-        parse(Float64, @view line[27:36]),
-        length(line) >= 38 ? parse(Float64, @view line[38:end]) : 0.0
+        parse(Float64, rest[1]),
+        length(rest) >= 2 ? parse(Float64, rest[2]) : 0.0
       ))
     end
   end

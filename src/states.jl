@@ -61,10 +61,8 @@ function read_state_file(filename, def=read_def_file(replace(filename, r"\.state
     push!(field_types, _fortran_to_type(field["ffmt"]))
   end
 
-  NT = NamedTuple{Tuple(Symbol.(field_names)), Tuple{field_types...}}
-  states = Vector{NT}()
-
   n = length(field_names)
+  split_lines = Vector{SubString{String}}[]
 
   # split(line) still allocates a Vector{SubString} per line. This can be
   # eliminated by pre-computing fixed byte positions from the ffmt widths
@@ -78,8 +76,24 @@ function read_state_file(filename, def=read_def_file(replace(filename, r"\.state
       isempty(line) && continue
       strings = split(line)
       length(strings) == n || error("Expected $n columns, got $(length(strings)) in: $line")
-      push!(states, NT(ntuple(i -> _parse_field(field_types[i], strings[i]), n)))
+      push!(split_lines, strings)
+      # Some datasets declare a Hund's-case quantum number (e.g. Sigma)
+      # as integer format even though it legitimately takes half-integer
+      # values for odd-multiplicity (doublet, quartet, ...) electronic
+      # states — promote such a field to Float64 rather than erroring,
+      # matching how the other float fields already handle "nan".
+      for i in 1:n
+        if field_types[i] === Int && occursin('.', strings[i])
+          field_types[i] = Float64
+        end
+      end
     end
+  end
+
+  NT = NamedTuple{Tuple(Symbol.(field_names)), Tuple{field_types...}}
+  states = Vector{NT}(undef, length(split_lines))
+  for (k, strings) in enumerate(split_lines)
+    states[k] = NT(ntuple(i -> _parse_field(field_types[i], strings[i]), n))
   end
 
   return states
