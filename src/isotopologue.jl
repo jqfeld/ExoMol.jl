@@ -89,11 +89,54 @@ function load_isotopologue(folder::AbstractString; wn_range=nothing)
     append!(transitions, chunk)
   end
 
+  # Some datasets omit the wavenumber column from their .trans files -- the
+  # ExoMol format permits it, because nu = E_upper - E_lower is recoverable
+  # from the states file (e.g. NH/kNigHt ships 3 columns: upper_id, lower_id,
+  # A; OH/MYTHOS ships 4, with nu). Recover it here, where the states are in hand.
+  if !isempty(transitions) && all(iszero(t.wavenumber) for t in transitions)
+    id_sym = hasproperty(first(states), :ID) ? :ID : :StateID
+    energy_by_id = Dict{Int,Float64}(
+      Int(getproperty(s, id_sym)) => Float64(s.E) for s in states
+    )
+    @info "Transition file has no wavenumber column; deriving nu = E_upper - E_lower from the states file" n = length(transitions)
+    transitions = [
+      Transition(t.upper_id, t.lower_id, t.A,
+                 energy_by_id[t.upper_id] - energy_by_id[t.lower_id])
+      for t in transitions
+    ]
+  end
+
   partition_function = isempty(pf_files) ? nothing : read_pf_file(pf_files[1])
 
   broad_files = files[findall(endswith(".broad"), files)]
 
   return Isotopologue(Dict(def), states, transitions, partition_function, _read_broadeners(broad_files))
+end
+
+"""
+    molar_mass(iso::Isotopologue) -> Float64
+
+Isotopologue mass in daltons (unified atomic mass units), read from the
+dataset's own `.def` file rather than summed from nominal atomic masses.
+
+The distinction matters for Doppler widths: SiO's `28Si-16O` is 43.971842 Da,
+not the 44.0 that adding mass numbers gives — a 0.032% error in
+`σ = (ν/c)·√(kT/m)` if you round.
+
+Throws if the dataset's definitions carry no mass field.
+
+```julia
+m_kg = molar_mass(iso) * 1.66053906660e-27   # Da → kg
+```
+"""
+function molar_mass(iso::Isotopologue)
+  isotop = get(iso.definitions, "isotopologue", nothing)
+  isotop === nothing && throw(ArgumentError(
+    "dataset definitions have no `isotopologue` section, so no mass is available"))
+  m = get(isotop, "mass_in_Da", nothing)
+  m === nothing && throw(ArgumentError(
+    "dataset definitions carry no `mass_in_Da` for this isotopologue"))
+  return Float64(m)
 end
 
 """

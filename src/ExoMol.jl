@@ -21,6 +21,7 @@ export read_broad_file, BroadeningLine
 
 export load_isotopologue, read_pf_file
 export Isotopologue, Transition
+export molar_mass
 
 
 
