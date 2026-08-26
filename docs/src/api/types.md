@@ -13,6 +13,12 @@ associated with a single ExoMol isotopologue dataset.
 Isotopologue
 ```
 
+### Accessors
+
+```@docs
+molar_mass
+```
+
 ## Transition
 
 ```@docs
@@ -24,3 +30,4 @@ Transition
 ```@docs
 BroadeningLine
 ```
+

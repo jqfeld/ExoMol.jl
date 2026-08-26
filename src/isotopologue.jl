@@ -119,10 +119,6 @@ end
 Isotopologue mass in daltons (unified atomic mass units), read from the
 dataset's own `.def` file rather than summed from nominal atomic masses.
 
-The distinction matters for Doppler widths: SiO's `28Si-16O` is 43.971842 Da,
-not the 44.0 that adding mass numbers gives — a 0.032% error in
-`σ = (ν/c)·√(kT/m)` if you round.
-
 Throws if the dataset's definitions carry no mass field.
 
 ```julia
