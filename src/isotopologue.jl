@@ -250,7 +250,7 @@ function Base.show(io::IO, ::MIME"text/plain", iso::Isotopologue)
     if isempty(iso.broadeners)
         print(io,   "  Broadeners:          none")
     else
-        parts = ["$k ($(_fmt(length(v))) lines)" for (k, v) in sort!(collect(iso.broadeners))]
+        parts = ["$k ($(_fmt(length(iso.broadeners[k]))) lines)" for k in sort!(collect(keys(iso.broadeners)))]
         print(io,   "  Broadeners:          ", join(parts, ", "))
     end
 end
