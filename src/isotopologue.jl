@@ -286,7 +286,10 @@ function _load_with_broad_fallback(iso, molecule, isotopologue, broad_fallback, 
   if broad_fallback isa AbstractString
     fallback_slug = broad_fallback
     files = _cached_broad_files(molecule, fallback_slug)
-    isempty(files) && (files = _fetch_broad_files_for_iso(molecule, fallback_slug, response; force, verbose))
+    if force || isempty(files)
+      fetched = _fetch_broad_files_for_iso(molecule, fallback_slug, response; force, verbose)
+      isempty(fetched) || (files = fetched)
+    end
     if isempty(files)
       @warn "Could not retrieve broadening data for $fallback_slug; skipping broadening fallback."
       return iso
@@ -296,6 +299,10 @@ function _load_with_broad_fallback(iso, molecule, isotopologue, broad_fallback, 
     if isnothing(fallback_slug)
       @warn "No cached broadening data found for any other isotopologue of $molecule; skipping broadening fallback."
       return iso
+    end
+    if force
+      fetched = _fetch_broad_files_for_iso(molecule, fallback_slug, response; force, verbose)
+      isempty(fetched) || (files = fetched)
     end
   end
 

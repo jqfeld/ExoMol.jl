@@ -172,7 +172,7 @@ end
     base = load_isotopologue(FIXTURE)
     empty_iso = ExoMol.Isotopologue(base.definitions, base.states, base.transitions,
       base.partition_function, Dict{String,Vector{BroadeningLine}}())
-    fb(arg, resp) = ExoMol._load_with_broad_fallback(empty_iso, mol, "1X-1Y", arg, resp; force=false, verbose=false)
+    fb(arg, resp; force=false) = ExoMol._load_with_broad_fallback(empty_iso, mol, "1X-1Y", arg, resp; force, verbose=false)
 
     # Auto: first cached isotopologue in API order
     iso = @test_logs (:info, r"borrowed from 1X-2Y") fb(true, response("1X-1Y", "1X-2Y", "1X-3Y"))
@@ -196,6 +196,18 @@ end
       @test collect(keys(iso4.broadeners)) == ["air"]
       @test isfile(joinpath(mol_dir, "1X-4Y", "TEST", "1X-4Y__air.broad"))
       @test isfile(joinpath(mol_dir, "1X-4Y", "TEST", "1X-4Y__TEST.def.json"))
+
+      # force=true refreshes the cached source files, explicitly and in auto mode
+      write(joinpath(server, "db", mol, "1X-4Y", "1X-4Y__air.broad"), "a0 0.0123 0.400\n")
+      iso4b = with_server(server) do
+        fb("1X-4Y", response("1X-1Y", "1X-4Y"); force=true)
+      end
+      @test only(iso4b.broadeners["air"]).gamma_L == 0.0123
+      write(joinpath(server, "db", mol, "1X-4Y", "1X-4Y__air.broad"), "a0 0.0456 0.400\n")
+      iso4c = with_server(server) do
+        fb(true, response("1X-1Y", "1X-4Y"); force=true)
+      end
+      @test only(iso4c.broadeners["air"]).gamma_L == 0.0456
     end
 
     # Unknown slug: warning, broadeners stay empty
