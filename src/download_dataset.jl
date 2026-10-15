@@ -11,9 +11,17 @@ function _human_bytes(n)
 end
 
 function _download_with_progress(url, dest; desc="", verbose=false)
+  # A redrawn progress bar only makes sense on a terminal; in CI logs the
+  # escape codes and per-chunk lines just flood the output.
+  stderr isa Base.TTY || return Downloads.download(url, dest; verbose)
   shown = Ref(false)
+  last_draw = Ref(0.0)
   Downloads.download(url, dest; verbose,
     progress = (total, now) -> begin
+      done = total > 0 && now >= total
+      t = time()
+      (!done && t - last_draw[] < 0.1) && return
+      last_draw[] = t
       shown[] = true
       cols = displaysize(stderr)[2]
       if total > 0
