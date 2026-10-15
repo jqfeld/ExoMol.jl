@@ -35,6 +35,38 @@ end
   @test t[2] == Transition(4, 3, 2.5e-3, 30.0)
 end
 
+@testset "read_trans_file column layouts" begin
+  mktempdir() do dir
+    f = joinpath(dir, "x.trans")
+    # Narrow IDs, wide padding, a tab, CRLF line ending and a blank line
+    write(f, "      7      3   1.0e-02    50.0\n\n12345678901234 2\t2.5e-03 30.0\r\n")
+    @test read_trans_file(f) == [Transition(7, 3, 1.0e-2, 50.0),
+                                 Transition(12345678901234, 2, 2.5e-3, 30.0)]
+    # Wavenumber column absent
+    write(f, "           2            1 1.0000e-02\n")
+    @test read_trans_file(f) == [Transition(2, 1, 1.0e-2, 0.0)]
+    # Too few columns
+    write(f, "           2            1\n")
+    @test_throws ErrorException read_trans_file(f)
+  end
+end
+
+@testset "read_state_file promotes integer column mid-file" begin
+  mktempdir() do dir
+    def = Dict("dataset" => Dict("states" => Dict("states_file_fields" => [
+      Dict("name" => "ID", "ffmt" => "I12"), Dict("name" => "E", "ffmt" => "F12.6"),
+      Dict("name" => "Sigma", "ffmt" => "I7")])))
+    f = joinpath(dir, "x.states")
+    write(f, "1 0.0 NaN\r\n2 1.0 1\n3 2.0 0.5\n4 3.0 nan\n")
+    states = read_state_file(f, def)
+    @test eltype(states) == @NamedTuple{ID::Int, E::Float64, Sigma::Float64}
+    @test isnan(states[1].Sigma)      # "nan" before promotion → NaN, not -2.0
+    @test states[2].Sigma === 1.0
+    @test states[3].Sigma === 0.5
+    @test isnan(states[4].Sigma)
+  end
+end
+
 @testset "read_pf_file" begin
   pf = read_pf_file(fixture("pf"))
   @test pf(1.0) ≈ 1.0
@@ -84,6 +116,24 @@ end
     end
     iso = @test_logs (:info, r"no wavenumber column") load_isotopologue(dir)
     @test Set(t.wavenumber for t in iso.transitions) == Set([50.0, 30.0, 120.0, 100.0])
+  end
+end
+
+@testset "wavenumber recovery is per file" begin
+  mktempdir() do dir
+    for f in readdir(FIXTURE)
+      cp(joinpath(FIXTURE, f), joinpath(dir, f))
+    end
+    # Only the second segment lacks the wavenumber column
+    f = joinpath(dir, "1X-1Y__TEST__00100-00200.trans")
+    lines = [join(split(l)[1:3], ' ') for l in eachline(f)]
+    write(f, join(lines, '\n') * '\n')
+    iso = load_isotopologue(dir)
+    @test Set(t.wavenumber for t in iso.transitions) == Set([50.0, 30.0, 120.0, 100.0])
+
+    # A transition referring to an unknown state is a clear error
+    write(f, "          99            1 1.0e-02\n")
+    @test_throws ErrorException("State ID 99 referenced in a transition file is not in the states file") load_isotopologue(dir)
   end
 end
 

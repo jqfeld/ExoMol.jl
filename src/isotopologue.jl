@@ -84,27 +84,30 @@ function load_isotopologue(folder::AbstractString; wn_range=nothing)
   @sync for (i, f) in enumerate(trans_files)
     Threads.@spawn chunks[i] = read_trans_file(f, n_per_file)
   end
-  transitions = Vector{Transition}()
-  sizehint!(transitions, sum(length(c) for c in chunks; init=0))
-  for chunk in chunks
-    append!(transitions, chunk)
-  end
 
   # Some datasets omit the wavenumber column from their .trans files -- the
   # ExoMol format permits it, because nu = E_upper - E_lower is recoverable
   # from the states file (e.g. NH/kNigHt ships 3 columns: upper_id, lower_id,
-  # A; OH/MYTHOS ships 4, with nu). Recover it here, where the states are in hand.
-  if !isempty(transitions) && all(iszero(t.wavenumber) for t in transitions)
-    id_sym = hasproperty(first(states), :ID) ? :ID : :StateID
-    energy_by_id = Dict{Int,Float64}(
-      Int(getproperty(s, id_sym)) => Float64(s.E) for s in states
-    )
-    @info "Transition file has no wavenumber column; deriving nu = E_upper - E_lower from the states file" n = length(transitions)
-    transitions = [
-      Transition(t.upper_id, t.lower_id, t.A,
-                 energy_by_id[t.upper_id] - energy_by_id[t.lower_id])
-      for t in transitions
-    ]
+  # A; OH/MYTHOS ships 4, with nu). Recover it per file, where the states
+  # are in hand.
+  missing_nu = [!isempty(c) && all(t -> iszero(t.wavenumber), c) for c in chunks]
+  if any(missing_nu)
+    # The first states column is the state ID in the ExoMol format.
+    energy_by_id = Dict{Int,Float64}(Int(first(s)) => Float64(s.E) for s in states)
+    energy(id) = get(() -> error("State ID $id referenced in a transition file is not in the states file"),
+      energy_by_id, id)
+    @info "Transition file(s) have no wavenumber column; deriving nu = E_upper - E_lower from the states file" files = basename.(trans_files[missing_nu])
+    for (i, chunk) in enumerate(chunks)
+      missing_nu[i] || continue
+      chunks[i] = [Transition(t.upper_id, t.lower_id, t.A, energy(t.upper_id) - energy(t.lower_id))
+                   for t in chunk]
+    end
+  end
+
+  transitions = Vector{Transition}()
+  sizehint!(transitions, sum(length(c) for c in chunks; init=0))
+  for chunk in chunks
+    append!(transitions, chunk)
   end
 
   partition_function = isempty(pf_files) ? nothing : read_pf_file(pf_files[1])
