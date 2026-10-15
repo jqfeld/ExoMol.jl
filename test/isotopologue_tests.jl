@@ -70,12 +70,12 @@ end
 
   # auto-detect: no other N2 isotopologue with cached broadeners → warn and return empty
   n2_fb = @test_logs (:warn, r"No cached broadening") min_level=Base.CoreLogging.Warn ExoMol._load_with_broad_fallback(
-    empty_iso, "N2", "14N2", dataset_dir, true, response; force=false, verbose=false)
+    empty_iso, "N2", "14N2", true, response; force=false, verbose=false)
   @test isempty(n2_fb.broadeners)
 
   # explicit unknown slug: not found → warn and return empty
   n2_fb2 = @test_logs (:warn, r"Could not retrieve") min_level=Base.CoreLogging.Warn ExoMol._load_with_broad_fallback(
-    empty_iso, "N2", "14N2", dataset_dir, "nonexistent_iso", response; force=false, verbose=false)
+    empty_iso, "N2", "14N2", "nonexistent_iso", response; force=false, verbose=false)
   @test isempty(n2_fb2.broadeners)
 end
 

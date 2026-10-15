@@ -154,3 +154,80 @@ end
     @test_throws ErrorException("No .states file found in $dir") load_isotopologue(dir)
   end
 end
+
+@testset "broad_fallback" begin
+  mol = "XYFALLBACKTEST"
+  mol_dir = joinpath(ExoMol.Scratch.get_scratch!(ExoMol, "exomol_datasets"), mol)
+  try
+    # Cached isotopologues 1X-2Y and 1X-3Y of a test molecule, each with an
+    # "air" broadening file.
+    for slug in ("1X-2Y", "1X-3Y")
+      d = mkpath(joinpath(mol_dir, slug, "TEST"))
+      cp(joinpath(FIXTURE, "1X-1Y__air.broad"), joinpath(d, "$(slug)__air.broad"))
+    end
+    url(slug) = Dict("url" => "www.exomol.com/db/$mol/$slug/TEST/$(slug)__TEST.trans.bz2")
+    # Ordered, like the parsed API response
+    response(slugs...) = [s => Dict("linelist" => Dict("TEST" => Dict("files" => [url(s)]))) for s in slugs]
+
+    base = load_isotopologue(FIXTURE)
+    empty_iso = ExoMol.Isotopologue(base.definitions, base.states, base.transitions,
+      base.partition_function, Dict{String,Vector{BroadeningLine}}())
+    fb(arg, resp) = ExoMol._load_with_broad_fallback(empty_iso, mol, "1X-1Y", arg, resp; force=false, verbose=false)
+
+    # Auto: first cached isotopologue in API order
+    iso = @test_logs (:info, r"borrowed from 1X-2Y") fb(true, response("1X-1Y", "1X-2Y", "1X-3Y"))
+    @test collect(keys(iso.broadeners)) == ["air"]
+    @test_logs (:info, r"borrowed from 1X-3Y") fb(true, response("1X-1Y", "1X-3Y", "1X-2Y"))
+    # Cached but not listed by the API: still found
+    @test_logs (:info, r"borrowed from 1X-2Y") fb(true, response("1X-1Y"))
+
+    # Explicit cached slug
+    @test_logs (:info, r"borrowed from 1X-3Y") fb("1X-3Y", response("1X-1Y"))
+
+    # Explicit slug not cached yet: downloaded into its own cache directory
+    mktempdir() do tmp
+      server = joinpath(tmp, "server")
+      d = mkpath(joinpath(server, "db", mol, "1X-4Y", "TEST"))
+      cp(joinpath(FIXTURE, "1X-1Y__TEST.def.json"), joinpath(d, "1X-4Y__TEST.def.json"))
+      cp(joinpath(FIXTURE, "1X-1Y__air.broad"), joinpath(server, "db", mol, "1X-4Y", "1X-4Y__air.broad"))
+      iso4 = with_server(server) do
+        @test_logs (:info, r"broadening file") (:info, r"borrowed from 1X-4Y") fb("1X-4Y", response("1X-1Y", "1X-4Y"))
+      end
+      @test collect(keys(iso4.broadeners)) == ["air"]
+      @test isfile(joinpath(mol_dir, "1X-4Y", "TEST", "1X-4Y__air.broad"))
+      @test isfile(joinpath(mol_dir, "1X-4Y", "TEST", "1X-4Y__TEST.def.json"))
+    end
+
+    # Unknown slug: warning, broadeners stay empty
+    iso_none = @test_logs (:warn, r"Could not retrieve") fb("1X-9Y", response("1X-1Y"))
+    @test isempty(iso_none.broadeners)
+  finally
+    rm(mol_dir; recursive=true, force=true)
+  end
+  # Nothing cached for the molecule at all
+  iso = @test_logs (:warn, r"No cached broadening") ExoMol._load_with_broad_fallback(
+    load_isotopologue(FIXTURE), mol, "1X-1Y", true, Dict(); force=false, verbose=false)
+end
+
+@testset "borrowed broadening is not stored with the dataset" begin
+  mol = "XYFALLBACKTEST2"
+  mol_dir = joinpath(ExoMol.Scratch.get_scratch!(ExoMol, "exomol_datasets"), mol)
+  try
+    d = mkpath(joinpath(mol_dir, "1X-2Y", "TEST"))
+    cp(joinpath(FIXTURE, "1X-1Y__air.broad"), joinpath(d, "1X-2Y__self.broad"))
+    mktempdir() do dir
+      for f in readdir(FIXTURE)
+        endswith(f, ".broad") || cp(joinpath(FIXTURE, f), joinpath(dir, f))
+      end
+      before = readdir(dir)
+      iso = load_isotopologue(dir)
+      @test isempty(iso.broadeners)
+      iso_fb = ExoMol._load_with_broad_fallback(iso, mol, "1X-1Y", true, Dict(); force=false, verbose=false)
+      @test collect(keys(iso_fb.broadeners)) == ["self"]
+      @test readdir(dir) == before
+      @test isempty(load_isotopologue(dir).broadeners)
+    end
+  finally
+    rm(mol_dir; recursive=true, force=true)
+  end
+end

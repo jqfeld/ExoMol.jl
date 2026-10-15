@@ -361,27 +361,63 @@ function _fetch_def_for_iso(molecule, iso_slug, response)
   return JSON.parse(String(take!(buf)))
 end
 
-function _resolve_fallback_iso(molecule, current_iso, response)
-  seen = Set{String}()
+# Isotopologue slugs of a molecule in the order the ExoMol API lists them.
+function _iso_slugs(response)
+  slugs = String[]
   for (_, iso_data) in response
     isa(iso_data, AbstractDict) && haskey(iso_data, "linelist") || continue
     for (_, ds_info) in iso_data["linelist"]
       isa(ds_info, AbstractDict) || continue
-      files = get(ds_info, "files", [])
-      isempty(files) && continue
-      url = get(files[1], "url", "")
-      m = match(r"exomol\.com/db/[^/]+/([^/]+)/", url)
-      isnothing(m) && continue
-      slug = m.captures[1]
-      (slug == current_iso || slug in seen) && continue
-      push!(seen, slug)
-      def = _find_cached_def(molecule, slug)
-      isnothing(def) && continue
-      get(get(def, "dataset", Dict()), "num_pressure_broadeners", 0) > 0 || continue
-      return slug, def
+      for f in get(ds_info, "files", [])
+        isa(f, AbstractDict) || continue
+        m = match(r"/db/[^/]+/([^/]+)/", get(f, "url", ""))
+        isnothing(m) || m[1] in slugs || push!(slugs, m[1])
+      end
     end
   end
-  return nothing, nothing
+  return slugs
+end
+
+# .broad files of an isotopologue in any of its cached datasets, keyed by
+# broadening partner.
+function _cached_broad_files(molecule, iso_slug)
+  files = Dict{String,String}()
+  iso_dir = joinpath(@get_scratch!("exomol_datasets"), molecule, iso_slug)
+  isdir(iso_dir) || return files
+  for ds_dir in readdir(iso_dir; join=true)
+    isdir(ds_dir) || continue
+    for f in readdir(ds_dir; join=true)
+      m = match(r"^.+__(.+)\.broad$", basename(f))
+      isnothing(m) || get!(files, m[1], f)
+    end
+  end
+  return files
+end
+
+# First other isotopologue with cached broadening files: those the API lists,
+# in its order (main isotopologue first), then any other cached ones.
+function _resolve_fallback_broad(molecule, current_iso, response)
+  mol_dir = joinpath(@get_scratch!("exomol_datasets"), molecule)
+  cached = isdir(mol_dir) ? sort!(filter(d -> isdir(joinpath(mol_dir, d)), readdir(mol_dir))) : String[]
+  for slug in unique!(vcat(_iso_slugs(response), cached))
+    slug == current_iso && continue
+    files = _cached_broad_files(molecule, slug)
+    isempty(files) || return slug, files
+  end
+  return nothing, Dict{String,String}()
+end
+
+# Download the broadening files of `iso_slug` into its own cache directory
+# (next to its .def.json), never into another dataset's folder.
+function _fetch_broad_files_for_iso(molecule, iso_slug, response; force=false, verbose=false)
+  def = _fetch_def_for_iso(molecule, iso_slug, response)
+  isnothing(def) && return Dict{String,String}()
+  ds_name = def["dataset"]["name"]
+  ds_dir = mkpath(joinpath(@get_scratch!("exomol_datasets"), molecule, iso_slug, ds_name))
+  def_path = joinpath(ds_dir, _data_filename(iso_slug, ds_name, "def.json"))
+  isfile(def_path) || write(def_path, JSON.json(def))
+  _download_broad_files(molecule, iso_slug, ds_dir, def; force, verbose)
+  return _cached_broad_files(molecule, iso_slug)
 end
 
 function _trans_in_wn_range(filename, isotopologue, dataset, wn_range)

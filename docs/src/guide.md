@@ -198,7 +198,9 @@ iso.definitions["isotopologue"]["iso_slug"]
 
 Some isotopologues lack broadening files. If you need broadening data and
 another isotopologue of the same molecule has it cached locally, use
-`broad_fallback=true`:
+`broad_fallback=true`. The first cached isotopologue with `.broad` files is
+used, in the order the ExoMol API lists isotopologues (main isotopologue
+first):
 
 ```julia
 iso = load_isotopologue("N2", "14N2"; broad_fallback=true)
@@ -209,6 +211,12 @@ To borrow from a specific isotopologue rather than auto-detecting one:
 ```julia
 iso = load_isotopologue("H2O", "1H2-18O"; broad_fallback="1H2-16O")
 ```
+
+A named isotopologue's broadening files are downloaded into its own cache if
+they are not there yet. Borrowed files are read from the other isotopologue's
+cache and never copied into this dataset's folder, so loading the dataset
+without `broad_fallback` still shows only its own broadening data. The source
+isotopologue is logged.
 
 If no suitable cached broadening data is found, a warning is issued and the
 returned `Isotopologue` has an empty `broadeners` dict.
