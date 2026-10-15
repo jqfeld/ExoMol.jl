@@ -1,0 +1,19 @@
+{
+  "isotopologue": {"iso_slug": "1X-1Y", "mass_in_Da": 2.016},
+  "dataset": {
+    "name": "TEST",
+    "num_pressure_broadeners": 1,
+    "states": {
+      "states_file_fields": [
+        {"name": "ID", "ffmt": "I12"},
+        {"name": "E", "ffmt": "F12.6"},
+        {"name": "gtot", "ffmt": "I6"},
+        {"name": "J", "ffmt": "I7"},
+        {"name": "v", "ffmt": "I3"},
+        {"name": "Sigma", "ffmt": "I7"},
+        {"name": "State", "ffmt": "A10"}
+      ]
+    },
+    "transitions": {"number_of_transitions": 4}
+  }
+}

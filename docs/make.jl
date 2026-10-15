@@ -5,7 +5,7 @@ DocMeta.setdocmeta!(ExoMol, :DocTestSetup, :(using ExoMol); recursive=true)
 
 makedocs(;
     modules=[ExoMol],
-    authors="Jan Kuhfeld <jan.kuhfeld@rub.de> and contributors",
+    authors="Jan Kuhfeld <jankuhfeld@plasma-matters.nl> and contributors",
     sitename="ExoMol.jl",
     format=Documenter.HTML(;
         canonical="https://jqfeld.github.io/ExoMol.jl",
