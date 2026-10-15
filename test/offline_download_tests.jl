@@ -243,3 +243,108 @@ end
     rm(mol_dir; recursive=true, force=true)
   end
 end
+
+@testset "API response cache" begin
+  mol = "XYAPITEST"
+  cache = ExoMol._api_cache_path(mol)
+  rm(cache; force=true)
+  mktempdir() do tmp
+    api = joinpath(tmp, "api.json")
+    write(api, """{"b": {"linelist": {}}, "a": {"linelist": {}}}""")
+    old = ExoMol._EXOMOL_API[]
+    try
+      # Live response is returned and cached
+      ExoMol._EXOMOL_API[] = file_url(api)
+      @test collect(keys(ExoMol._fetch_linelist_api(mol))) == ["b", "a"]
+      @test isfile(cache)
+
+      # API unreachable: cached response, order kept, with a warning
+      ExoMol._EXOMOL_API[] = file_url(joinpath(tmp, "missing"))
+      r = @test_logs (:warn, r"using cached response") ExoMol._fetch_linelist_api(mol)
+      @test collect(keys(r)) == ["b", "a"]
+
+      # Offline mode: cached response without trying the network
+      ExoMol._EXOMOL_API[] = "http://127.0.0.1:9/"
+      @test_logs ExoMol._fetch_linelist_api(mol; offline=true)
+      withenv("EXOMOL_OFFLINE" => "true") do
+        @test_logs ExoMol._fetch_linelist_api(mol)
+      end
+
+      # No cache: clear errors
+      rm(cache)
+      @test_throws ExoMol.ExoMolCacheError ExoMol._fetch_linelist_api(mol; offline=true)
+      ExoMol._EXOMOL_API[] = file_url(joinpath(tmp, "missing"))
+      @test_throws ExoMol.ExoMolCacheError ExoMol._fetch_linelist_api(mol)
+    finally
+      ExoMol._EXOMOL_API[] = old
+      rm(cache; force=true)
+    end
+  end
+end
+
+@testset "load_isotopologue(molecule, isotopologue) offline" begin
+  cache = ExoMol._api_cache_path("XY")
+  rm(cache; force=true)
+  try
+    mktempdir() do tmp
+      server, response = fake_server(joinpath(tmp, "server"))
+      dest = joinpath(tmp, "data")
+      with_server(server) do
+        get_exomol_dataset("XY", "1X-1Y", "TEST"; dest, _response=response)
+      end
+      rm(server; recursive=true)
+
+      with_server(server) do
+        # No API response cached, exactly one cached dataset: used, with a warning
+        iso = @test_logs (:warn, r"only cached dataset of 1X-1Y: TEST") match_mode=:any load_isotopologue(
+          "XY", "1X-1Y"; dest)
+        @test length(iso.transitions) == 4
+        iso = @test_logs (:warn, r"only cached dataset") match_mode=:any load_isotopologue(
+          "XY", "1X-1Y"; dest, offline=true)
+        @test length(iso.transitions) == 4
+
+        # Cached API response naming the recommended dataset
+        files = response["1X-1Y"]["linelist"]["TEST"]["files"]
+        rec = Dict("1X-1Y" => Dict("linelist" => Dict("TEST" => Dict("files" => files, "recommended" => true))))
+        write(cache, ExoMol.JSON.json(rec))
+        @test_logs (:info, r"recommended dataset: TEST") match_mode=:any load_isotopologue(
+          "XY", "1X-1Y"; dest, offline=true)
+        rm(cache)
+
+        # Several cached datasets: the user has to choose
+        cp(joinpath(dest, "1X-1Y__TEST.def.json"), joinpath(dest, "1X-1Y__OTHER.def.json"))
+        cp(joinpath(dest, "1X-1Y__TEST.states.bz2"), joinpath(dest, "1X-1Y__OTHER.states.bz2"))
+        err = try load_isotopologue("XY", "1X-1Y"; dest, offline=true); nothing catch e; e end
+        @test err isa ExoMol.ExoMolCacheError
+        @test occursin("several cached datasets of 1X-1Y (OTHER, TEST)", err.msg)
+      end
+    end
+  finally
+    rm(cache; force=true)
+  end
+end
+
+@testset "get_exomol_dataset offline mode" begin
+  mktempdir() do tmp
+    server, response = fake_server(joinpath(tmp, "server"))
+    dest = joinpath(tmp, "data")
+    with_server(server) do
+      get_exomol_dataset("XY", "1X-1Y", "TEST"; dest, wn_range=(0, 90), _response=response)
+    end
+    # No network access at all: any attempt would fail
+    old = (ExoMol._EXOMOL_BASE[], ExoMol._EXOMOL_API[])
+    ExoMol._EXOMOL_BASE[] = ExoMol._EXOMOL_API[] = "http://127.0.0.1:9/"
+    try
+      @test (@test_logs (:info, r"cached") get_exomol_dataset("XY", "1X-1Y", "TEST";
+        dest, wn_range=(0, 90), offline=true)) == dest
+      # A transition file that was never downloaded
+      @test_throws r"transition file.*00100-00200" get_exomol_dataset("XY", "1X-1Y", "TEST"; dest, offline=true)
+      @test_throws ArgumentError get_exomol_dataset("XY", "1X-1Y", "TEST"; dest, offline=true, force=true)
+      rm(joinpath(dest, "1X-1Y__TEST.states.bz2"))
+      @test_throws r"missing 1X-1Y__TEST.states.bz2" withenv(() -> get_exomol_dataset("XY", "1X-1Y", "TEST"; dest),
+        "EXOMOL_OFFLINE" => "true")
+    finally
+      ExoMol._EXOMOL_BASE[], ExoMol._EXOMOL_API[] = old
+    end
+  end
+end

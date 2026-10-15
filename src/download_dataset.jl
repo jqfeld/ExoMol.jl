@@ -17,6 +17,19 @@ const _EXOMOL_API = Ref("https://exomol.com/api/")
 
 _db_url(path) = "$(_EXOMOL_BASE[])/db/$(path)"
 
+# Timeout (s) for API requests, so a hanging network falls back to the cached
+# response instead of blocking.
+const _API_TIMEOUT = Ref(30.0)
+
+# Offline mode: the `offline` keyword or the EXOMOL_OFFLINE environment variable.
+_is_offline(offline) = offline || lowercase(get(ENV, "EXOMOL_OFFLINE", "false")) in ("true", "1")
+
+# Raised when offline use needs data that is not in the local cache.
+struct ExoMolCacheError <: Exception
+  msg::String
+end
+Base.showerror(io::IO, e::ExoMolCacheError) = print(io, "ExoMolCacheError: ", e.msg)
+
 # File URLs from the ExoMol API usually lack a scheme
 # ("www.exomol.com/db/..."); accept full URLs as well.
 function _absolute_url(url)
@@ -91,6 +104,9 @@ Download a specific ExoMol dataset and store it locally.
 - `force::Bool=false`: Re-download files even if they already exist in the local
   cache.
 - `verbose::Bool=false`: Forward verbose output to `Downloads.download`.
+- `offline::Bool=false`: Never access the network; use only cached files and
+  raise an `ExoMolCacheError` if a needed file is missing. Also enabled by the
+  environment variable `EXOMOL_OFFLINE=true`.
 
 Once all requested files are present, no network access is needed: the list of
 transition files and the broadening partners missing on the server are
@@ -103,8 +119,10 @@ remembered in a `.exomol_manifest.json` file in the dataset directory.
   This path can be passed directly to [`load_isotopologue`](@ref).
 """
 function get_exomol_dataset(molecule, isotopologue, dataset;
-  dest=nothing, wn_range=nothing, force=false, verbose=false, _response=nothing)
+  dest=nothing, wn_range=nothing, force=false, verbose=false, offline=false, _response=nothing)
 
+  offline = _is_offline(offline)
+  offline && force && throw(ArgumentError("force=true needs network access; it cannot be combined with offline mode"))
   if isnothing(dest)
     datasets_dir = @get_scratch!("exomol_datasets")
     dataset_dir = joinpath(datasets_dir, molecule, isotopologue, dataset)
@@ -115,6 +133,13 @@ function get_exomol_dataset(molecule, isotopologue, dataset;
   def_path = joinpath(dataset_dir, _data_filename(isotopologue, dataset, "def.json"))
   states_path = joinpath(dataset_dir, _data_filename(isotopologue, dataset, "states.bz2"))
   pf_path = joinpath(dataset_dir, _data_filename(isotopologue, dataset, "pf"))
+
+  if offline
+    missing_files = filter(!isfile, [def_path, states_path, pf_path])
+    isempty(missing_files) || throw(ExoMolCacheError(
+      "offline mode: $molecule/$isotopologue/$dataset is not fully cached; missing " *
+      join(basename.(missing_files), ", ")))
+  end
 
   # Each file is checked on its own: a failed states download must not be
   # masked by an already present .def.json.
@@ -138,13 +163,14 @@ function get_exomol_dataset(molecule, isotopologue, dataset;
   manifest = (!force && isfile(manifest_path)) ? JSON.parsefile(manifest_path) : Dict{String,Any}()
 
   def = JSON.parsefile(def_path)
-  broad_missing = _download_broad_files(molecule, isotopologue, dataset_dir, def;
-    force, verbose, skip=get(manifest, "broad_missing", String[]))
+  broad_missing = offline ? get(manifest, "broad_missing", String[]) :
+    _download_broad_files(molecule, isotopologue, dataset_dir, def;
+      force, verbose, skip=get(manifest, "broad_missing", String[]))
 
   all_trans = if haskey(manifest, "trans_files")
     [(url=f["url"], size=get(f, "size", nothing)) for f in manifest["trans_files"]]
   else
-    response = isnothing(_response) ? _fetch_linelist_api(molecule) : _response
+    response = isnothing(_response) ? _fetch_linelist_api(molecule; offline) : _response
     _trans_files_from_response(response, isotopologue, dataset)
   end
   _write_manifest(manifest_path, all_trans, broad_missing)
@@ -152,6 +178,9 @@ function get_exomol_dataset(molecule, isotopologue, dataset;
   trans_files = isnothing(wn_range) ? all_trans :
     filter(t -> _trans_in_wn_range(basename(t.url), isotopologue, dataset, wn_range), all_trans)
   pending = force ? trans_files : filter(t -> !isfile(joinpath(dataset_dir, basename(t.url))), trans_files)
+  offline && !isempty(pending) && throw(ExoMolCacheError(
+    "offline mode: $(length(pending)) transition file(s) of $molecule/$isotopologue/$dataset " *
+    "are not cached: " * join(basename.(t.url for t in pending), ", ")))
 
   if isempty(pending)
     @info "Using cached dataset."
@@ -230,10 +259,35 @@ function _write_manifest(path, trans_files, broad_missing)
   mv(tmp, path; force=true)
 end
 
-function _fetch_linelist_api(molecule)
-  buf = IOBuffer()
-  Downloads.download("$(_EXOMOL_API[])?molecule=$(molecule)&datatype=linelist", buf)
-  JSON.parse(String(take!(buf)))
+_api_cache_path(molecule) = joinpath(@get_scratch!("exomol_api"), "$(molecule).linelist.json")
+
+# Query the ExoMol linelist API and cache the response. If the API cannot be
+# reached (or in offline mode), the cached response is used instead.
+function _fetch_linelist_api(molecule; offline=false)
+  cache = _api_cache_path(molecule)
+  if !_is_offline(offline)
+    try
+      buf = IOBuffer()
+      Downloads.download("$(_EXOMOL_API[])?molecule=$(molecule)&datatype=linelist", buf;
+        timeout=_API_TIMEOUT[])
+      text = String(take!(buf))
+      response = JSON.parse(text)
+      write(cache * ".part", text)
+      mv(cache * ".part", cache; force=true)
+      return response
+    catch e
+      e isa Downloads.RequestError || rethrow()
+      isfile(cache) || throw(ExoMolCacheError(
+        "the ExoMol API is unreachable ($(e.message)) and no cached response for $molecule " *
+        "exists; run once with network access first"))
+      days = round(Int, (time() - mtime(cache)) / 86400)
+      @warn "ExoMol API unreachable; using cached response for $molecule from $days day(s) ago" cache
+    end
+  elseif !isfile(cache)
+    throw(ExoMolCacheError("offline mode: no cached ExoMol API response for $molecule; " *
+      "run once with network access first"))
+  end
+  return JSON.parsefile(cache)
 end
 
 function _trans_files_from_response(response, isotopologue, dataset)
@@ -256,8 +310,8 @@ function _fetch_trans_urls(molecule, isotopologue, dataset; wn_range=nothing, _r
   return filter(t -> _trans_in_wn_range(basename(t.url), isotopologue, dataset, wn_range), trans)
 end
 
-function _recommended_dataset(molecule, isotopologue)
-  response = _fetch_linelist_api(molecule)
+function _recommended_dataset(molecule, isotopologue; offline=false)
+  response = _fetch_linelist_api(molecule; offline)
 
   for (_, iso_data) in response
     !haskey(iso_data, "linelist") && continue
@@ -274,6 +328,57 @@ function _recommended_dataset(molecule, isotopologue)
   end
 
   error("No recommended dataset found for $(molecule) / $(isotopologue)")
+end
+
+# Datasets of an isotopologue that load without network access: .def.json,
+# .states.bz2 and manifest present (in the scratch cache, or in `dest`).
+function _cached_datasets(molecule, isotopologue; dest=nothing)
+  dirs = if isnothing(dest)
+    iso_dir = joinpath(@get_scratch!("exomol_datasets"), molecule, isotopologue)
+    isdir(iso_dir) ? filter(isdir, readdir(iso_dir; join=true)) : String[]
+  else
+    isdir(dest) ? [dest] : String[]
+  end
+  prefix = "$(isotopologue)__"
+  names = String[]
+  for dir in dirs, f in readdir(dir)
+    (startswith(f, prefix) && endswith(f, ".def.json")) || continue
+    ds = chop(f; head=length(prefix), tail=length(".def.json"))
+    isfile(joinpath(dir, _data_filename(isotopologue, ds, "states.bz2"))) &&
+      isfile(joinpath(dir, _MANIFEST_FILENAME)) && push!(names, ds)
+  end
+  return unique!(names)
+end
+
+# Recommended dataset of an isotopologue and the API response it came from.
+# Without any API response (live or cached), fall back to the only cached
+# dataset of the isotopologue, if there is exactly one.
+function _resolve_recommended(molecule, isotopologue; dest=nothing, offline=false)
+  try
+    dataset, response = _recommended_dataset(molecule, isotopologue; offline)
+    @info "Using recommended dataset: $dataset"
+    return dataset, response
+  catch e
+    e isa ExoMolCacheError || rethrow()
+    cached = _cached_datasets(molecule, isotopologue; dest)
+    isempty(cached) && throw(ExoMolCacheError(e.msg * "; no cached dataset of $isotopologue found either"))
+    length(cached) > 1 && throw(ExoMolCacheError(e.msg * "; several cached datasets of " *
+      "$isotopologue ($(join(cached, ", "))), pass the dataset name explicitly"))
+    @warn "Cannot determine the recommended dataset; using the only cached dataset of $isotopologue: $(only(cached))"
+    return only(cached), nothing
+  end
+end
+
+# API response for the broadening fallback, which only needs it to order and
+# locate isotopologues: an empty response if none is available.
+function _response_for_fallback(molecule, response; offline=false)
+  isnothing(response) || return response
+  try
+    return _fetch_linelist_api(molecule; offline)
+  catch e
+    e isa ExoMolCacheError || rethrow()
+    return Dict{String,Any}()
+  end
 end
 
 # Common ExoMol broadening-partner codes (ExoMol 2024 release paper, Table 2).
@@ -409,7 +514,8 @@ end
 
 # Download the broadening files of `iso_slug` into its own cache directory
 # (next to its .def.json), never into another dataset's folder.
-function _fetch_broad_files_for_iso(molecule, iso_slug, response; force=false, verbose=false)
+function _fetch_broad_files_for_iso(molecule, iso_slug, response; force=false, verbose=false, offline=false)
+  offline && return Dict{String,String}()
   def = _fetch_def_for_iso(molecule, iso_slug, response)
   isnothing(def) && return Dict{String,String}()
   ds_name = def["dataset"]["name"]
