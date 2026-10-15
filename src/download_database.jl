@@ -20,7 +20,7 @@ function get_exomol_master_file(; force=false)
   filepath = joinpath(cache_dir, "exomol.all.json")
 
   if !isfile(filepath) || force
-    _download_with_progress("https://www.exomol.com/db/exomol.all.json", filepath;
+    _download_with_progress(_db_url("exomol.all.json"), filepath;
       desc="  ExoMol catalogue:")
   end
 
