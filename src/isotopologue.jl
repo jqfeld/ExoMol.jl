@@ -197,6 +197,8 @@ Download an ExoMol dataset (if not already cached) and load it into an
   transition files that overlap the range are downloaded and loaded.
 - `force::Bool=false`: Re-download files even if already cached.
 - `verbose::Bool=false`: Forward verbose output to `Downloads.download`.
+- `offline::Bool=false`: Never access the network; use only cached data (see
+  [`get_exomol_dataset`](@ref)). Also enabled by `EXOMOL_OFFLINE=true`.
 - `broad_fallback`: When `true`, if the dataset has no broadening files the
   package borrows them from another cached isotopologue of the same molecule
   (the first with `.broad` files, in the order the ExoMol API lists
@@ -208,12 +210,13 @@ Download an ExoMol dataset (if not already cached) and load it into an
 - `Isotopologue`: Parsed isotopologue data ready for analysis.
 """
 function load_isotopologue(molecule, isotopologue, dataset;
-    dest=nothing, wn_range=nothing, force=false, verbose=false, broad_fallback=false)
-  ds = ExoMol.get_exomol_dataset(molecule, isotopologue, dataset; dest, wn_range, force, verbose)
+    dest=nothing, wn_range=nothing, force=false, verbose=false, offline=false, broad_fallback=false)
+  ds = ExoMol.get_exomol_dataset(molecule, isotopologue, dataset; dest, wn_range, force, verbose, offline)
   iso = load_isotopologue(ds; wn_range)
   (broad_fallback === false || !isempty(iso.broadeners)) && return iso
-  response = ExoMol._fetch_linelist_api(molecule)
-  return _load_with_broad_fallback(iso, molecule, isotopologue, broad_fallback, response; force, verbose)
+  response = _response_for_fallback(molecule, nothing; offline)
+  return _load_with_broad_fallback(iso, molecule, isotopologue, broad_fallback, response;
+    force, verbose, offline=_is_offline(offline))
 end
 
 """
@@ -221,6 +224,11 @@ end
 
 Like the three-argument form but automatically selects the dataset marked
 `recommended` in the ExoMol API.
+
+Without network access the last successful API response for the molecule is
+used (with a warning). If no API response was ever cached and exactly one
+dataset of the isotopologue is cached, that dataset is loaded; with several
+cached datasets, pass the dataset name explicitly.
 
 # Arguments
 - `molecule`: Molecular formula (e.g. `"H2O"`).
@@ -233,6 +241,8 @@ Like the three-argument form but automatically selects the dataset marked
   transition files that overlap the range are downloaded and loaded.
 - `force::Bool=false`: Re-download files even if already cached.
 - `verbose::Bool=false`: Forward verbose output to `Downloads.download`.
+- `offline::Bool=false`: Never access the network; use only cached data (see
+  [`get_exomol_dataset`](@ref)). Also enabled by `EXOMOL_OFFLINE=true`.
 - `broad_fallback`: When `true`, if the dataset has no broadening files the
   package borrows them from another cached isotopologue of the same molecule
   (the first with `.broad` files, in the order the ExoMol API lists
@@ -244,13 +254,14 @@ Like the three-argument form but automatically selects the dataset marked
 - `Isotopologue`: Parsed isotopologue data ready for analysis.
 """
 function load_isotopologue(molecule, isotopologue;
-    dest=nothing, wn_range=nothing, force=false, verbose=false, broad_fallback=false)
-  dataset, response = ExoMol._recommended_dataset(molecule, isotopologue)
-  @info "Using recommended dataset: $dataset"
-  ds = ExoMol.get_exomol_dataset(molecule, isotopologue, dataset; dest, wn_range, force, verbose, _response=response)
+    dest=nothing, wn_range=nothing, force=false, verbose=false, offline=false, broad_fallback=false)
+  dataset, response = _resolve_recommended(molecule, isotopologue; dest, offline)
+  ds = ExoMol.get_exomol_dataset(molecule, isotopologue, dataset; dest, wn_range, force, verbose, offline, _response=response)
   iso = load_isotopologue(ds; wn_range)
   (broad_fallback === false || !isempty(iso.broadeners)) && return iso
-  return _load_with_broad_fallback(iso, molecule, isotopologue, broad_fallback, response; force, verbose)
+  response = _response_for_fallback(molecule, response; offline)
+  return _load_with_broad_fallback(iso, molecule, isotopologue, broad_fallback, response;
+    force, verbose, offline=_is_offline(offline))
 end
 
 function Base.show(io::IO, iso::Isotopologue)
@@ -282,12 +293,12 @@ end
 # Borrowed broadening files are read from the other isotopologue's cache and
 # never copied into this dataset's folder, so later loads without
 # `broad_fallback` don't silently pick them up.
-function _load_with_broad_fallback(iso, molecule, isotopologue, broad_fallback, response; force, verbose)
+function _load_with_broad_fallback(iso, molecule, isotopologue, broad_fallback, response; force, verbose, offline=false)
   if broad_fallback isa AbstractString
     fallback_slug = broad_fallback
     files = _cached_broad_files(molecule, fallback_slug)
     if force || isempty(files)
-      fetched = _fetch_broad_files_for_iso(molecule, fallback_slug, response; force, verbose)
+      fetched = _fetch_broad_files_for_iso(molecule, fallback_slug, response; force, verbose, offline)
       isempty(fetched) || (files = fetched)
     end
     if isempty(files)
@@ -301,7 +312,7 @@ function _load_with_broad_fallback(iso, molecule, isotopologue, broad_fallback, 
       return iso
     end
     if force
-      fetched = _fetch_broad_files_for_iso(molecule, fallback_slug, response; force, verbose)
+      fetched = _fetch_broad_files_for_iso(molecule, fallback_slug, response; force, verbose, offline)
       isempty(fetched) || (files = fetched)
     end
   end

@@ -194,6 +194,23 @@ iso.definitions["dataset"]["max_temperature"]
 iso.definitions["isotopologue"]["iso_slug"]
 ```
 
+## Offline use
+
+Once a dataset has been downloaded, loading it needs no network access. Each
+successful ExoMol API response is cached as well, so
+`load_isotopologue(molecule, isotopologue)` can still find the recommended
+dataset when the API is unreachable (a warning names the cached response). If
+no API response was ever cached but exactly one dataset of the isotopologue is,
+that dataset is used; with several, pass the dataset name explicitly.
+
+To guarantee that nothing touches the network (e.g. on compute nodes), pass
+`offline=true` or set the environment variable `EXOMOL_OFFLINE=true`. Missing
+files then raise an error instead of being downloaded:
+
+```julia
+iso = load_isotopologue("H2O", "1H2-16O"; offline=true)
+```
+
 ## Broadening fallback
 
 Some isotopologues lack broadening files. If you need broadening data and
