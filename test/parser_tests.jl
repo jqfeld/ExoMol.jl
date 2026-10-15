@@ -69,6 +69,8 @@ end
 
 @testset "read_pf_file" begin
   pf = read_pf_file(fixture("pf"))
+  @test extrema(pf.t) == (1.0, 100.0)
+  @test_throws Exception pf(500.0)
   @test pf(1.0) ≈ 1.0
   @test pf(100.0) ≈ 20.0
   @test pf(5.5) ≈ 1.75
@@ -94,10 +96,8 @@ end
   @test iso.partition_function(10.0) ≈ 2.5
   @test sprint(show, iso) == "Isotopologue(1X-1Y/TEST, 4 states, 4 transitions)"
 
-  # Uncompressed segmented .trans files are not yet recognised by the
-  # wavenumber-range filter, so every file is still loaded.
   iso_lo = load_isotopologue(FIXTURE; wn_range=(0, 90))
-  @test_broken sort([t.wavenumber for t in iso_lo.transitions]) == [30.0, 50.0]
+  @test sort([t.wavenumber for t in iso_lo.transitions]) == [30.0, 50.0]
 end
 
 @testset "load_isotopologue recovers missing wavenumbers" begin
@@ -134,6 +134,36 @@ end
     # A transition referring to an unknown state is a clear error
     write(f, "          99            1 1.0e-02\n")
     @test_throws ErrorException("State ID 99 referenced in a transition file is not in the states file") load_isotopologue(dir)
+  end
+end
+
+@testset "load_isotopologue rejects several datasets in one folder" begin
+  mktempdir() do dir
+    for f in readdir(FIXTURE)
+      cp(joinpath(FIXTURE, f), joinpath(dir, f))
+    end
+    cp(fixture("def.json"), joinpath(dir, "1X-1Y__OTHER.def.json"))
+    @test_throws r"Several .def.json files" load_isotopologue(dir)
+  end
+end
+
+@testset "load_isotopologue concatenates states files with different types" begin
+  mktempdir() do dir
+    for f in readdir(FIXTURE)
+      endswith(f, ".states") && continue
+      cp(joinpath(FIXTURE, f), joinpath(dir, f))
+    end
+    # Sigma is integer-only in the first file and half-integer in the second
+    lines = readlines(fixture("states"))
+    write(joinpath(dir, "1X-1Y__TEST.states"),
+      join(replace.(lines[1:2], r"(-?\d)\.5(\s+\S+)$" => s"\g<1>\2"), '\n') * '\n')
+    write(joinpath(dir, "1X-1Y__TEST.states.bz2"),
+      transcode(ExoMol.Bzip2Compressor, join(lines[3:4], '\n') * '\n'))
+    iso = load_isotopologue(dir)
+    @test length(iso.states) == 4
+    @test fieldtype(eltype(iso.states), :Sigma) == Float64
+    @test iso.states[1].Sigma === 0.0
+    @test iso.states[3].Sigma === 1.5
   end
 end
 

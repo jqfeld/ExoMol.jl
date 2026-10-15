@@ -39,7 +39,7 @@ end
   # wn_range on the folder-based loader: WCCRMT's unsegmented main trans file
   # always passes the filter regardless of range. Its supplementary
   # "__ERJ.trans.bz2" file (added later, contains the C-B system — see the
-  # "wn_range filtering" testset below) doesn't match any recognized
+  # "wn_range filtering" testset in offline_download_tests.jl) doesn't match any recognized
   # filename pattern either, so it's *also* always included (can't determine
   # its coverage from the name, and the safe default is to include rather
   # than silently drop in-range data) — regardless of range, both files are
@@ -62,40 +62,6 @@ end
   @test "14N2__WCCRMT__ERJ.trans.bz2" in names
   erj = urls[findfirst(u -> basename(u.url) == "14N2__WCCRMT__ERJ.trans.bz2", urls)]
   @test isnothing(erj.size)
-end
-
-@testset "wn_range filtering" begin
-  f = ExoMol._trans_in_wn_range
-
-  # Unsegmented file always passes
-  @test  f("1H2-16O__BT2.trans.bz2", "1H2-16O", "BT2", (0, 1000))
-  @test  f("1H2-16O__BT2.trans.bz2", "1H2-16O", "BT2", (500, 600))
-
-  # File fully inside range
-  @test  f("1H2-16O__BT2__00250-00500.trans.bz2", "1H2-16O", "BT2", (0, 1000))
-  @test  f("1H2-16O__BT2__00250-00500.trans.bz2", "1H2-16O", "BT2", (250, 500))
-
-  # Exact boundary: lower == wn_min and upper == wn_max
-  @test  f("1H2-16O__BT2__00000-00100.trans.bz2", "1H2-16O", "BT2", (0, 100))
-
-  # File partially overlaps range → included (overlap semantics)
-  @test  f("1H2-16O__BT2__00900-01100.trans.bz2", "1H2-16O", "BT2", (0, 1000))
-  @test  f("1H2-16O__BT2__00000-00250.trans.bz2", "1H2-16O", "BT2", (100, 1000))
-  @test  f("1H2-16O__BT2__00500-01000.trans.bz2", "1H2-16O", "BT2", (0, 900))
-
-  # File entirely outside range → excluded
-  @test !f("1H2-16O__BT2__00000-00100.trans.bz2", "1H2-16O", "BT2", (200, 500))
-  @test !f("1H2-16O__BT2__00600-01000.trans.bz2", "1H2-16O", "BT2", (100, 500))
-
-  # Unrecognised suffix → included (can't determine its coverage from the
-  # name alone, so the safe default is to include it rather than risk
-  # silently dropping in-range data — see N2/WCCRMT's real "__ERJ" file,
-  # which turned out to hold an entire band system omitted by this filter
-  # before this behavior was fixed), and a warning is emitted so the caller
-  # knows a heuristic decision was made.
-  @test_logs (:warn, r"doesn't match a recognized wavenumber-range naming pattern") begin
-    @test f("1H2-16O__BT2__ERJ.trans.bz2", "1H2-16O", "BT2", (0, 99999))
-  end
 end
 
 @testset "_download_broad_files probes unadvertised partners" begin
