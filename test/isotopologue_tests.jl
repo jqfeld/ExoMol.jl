@@ -68,10 +68,20 @@ end
     Dict{String,Vector{BroadeningLine}}())
   response = ExoMol._fetch_linelist_api("N2")
 
-  # auto-detect: no other N2 isotopologue with cached broadeners → warn and return empty
-  n2_fb = @test_logs (:warn, r"No cached broadening") min_level=Base.CoreLogging.Warn ExoMol._load_with_broad_fallback(
-    empty_iso, "N2", "14N2", true, response; force=false, verbose=false)
-  @test isempty(n2_fb.broadeners)
+  # auto-detect: the outcome depends on which other N2 isotopologues happen to
+  # be in the (CI-cached) scratch space, so derive the expectation from it.
+  # The "nothing cached" case is covered deterministically in
+  # offline_download_tests.jl.
+  slug, files = ExoMol._resolve_fallback_broad("N2", "14N2", response)
+  if isnothing(slug)
+    n2_fb = @test_logs (:warn, r"No cached broadening") min_level=Base.CoreLogging.Warn ExoMol._load_with_broad_fallback(
+      empty_iso, "N2", "14N2", true, response; force=false, verbose=false)
+    @test isempty(n2_fb.broadeners)
+  else
+    n2_fb = @test_logs (:info, Regex("borrowed from $slug")) ExoMol._load_with_broad_fallback(
+      empty_iso, "N2", "14N2", true, response; force=false, verbose=false)
+    @test sort!(collect(keys(n2_fb.broadeners))) == sort!(collect(keys(files)))
+  end
 
   # explicit unknown slug: not found → warn and return empty
   n2_fb2 = @test_logs (:warn, r"Could not retrieve") min_level=Base.CoreLogging.Warn ExoMol._load_with_broad_fallback(
