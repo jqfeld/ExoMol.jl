@@ -24,6 +24,21 @@ struct Isotopologue{S, P}
   broadeners::Dict{String, Vector{BroadeningLine}}
 end
 
+# Concatenate states read from several files. An integer column may have
+# been promoted to Float64 in only some of them, so promote field by field.
+function _concat_states(parts)
+  length(parts) == 1 && return only(parts)
+  NT = mapreduce(eltype, _promote_nt, parts)
+  states = NT[]
+  for p in parts
+    append!(states, p)
+  end
+  return states
+end
+
+_promote_nt(::Type{NamedTuple{N,A}}, ::Type{NamedTuple{N,B}}) where {N,A,B} =
+  NamedTuple{N, Tuple{map(promote_type, fieldtypes(A), fieldtypes(B))...}}
+
 _fmt(n::Integer) = reverse(join(Iterators.partition(reverse(string(n)), 3), ','))
 
 function _read_broadeners(broad_files)
@@ -53,16 +68,18 @@ function load_isotopologue(folder::AbstractString; wn_range=nothing)
 
   files = joinpath.(folder, readdir(folder))
 
-  def_idx = findfirst(endswith(r".def.json"), files)
-  isnothing(def_idx) && error("No .def.json file found in $folder")
-  def_file = files[def_idx]
-  states_files = files[findall(endswith(r".states(.bz2|$)"), files)]
+  def_files = filter(f -> endswith(f, ".def.json"), files)
+  isempty(def_files) && error("No .def.json file found in $folder")
+  length(def_files) > 1 && error("Several .def.json files found in $folder " *
+    "($(join(basename.(def_files), ", "))); keep one dataset per folder")
+  def_file = only(def_files)
+  states_files = filter(f -> occursin(r"\.states(\.bz2)?$", f), files)
   isempty(states_files) && error("No .states file found in $folder")
-  pf_files = files[findall(endswith(".pf"), files)]
+  pf_files = filter(f -> endswith(f, ".pf"), files)
 
   def = read_def_file(def_file)
 
-  all_trans = files[findall(endswith(r".trans(.bz2|$)"), files)]
+  all_trans = filter(f -> occursin(r"\.trans(\.bz2)?$", f), files)
   if isnothing(wn_range)
     trans_files = all_trans
   else
@@ -71,10 +88,7 @@ function load_isotopologue(folder::AbstractString; wn_range=nothing)
     trans_files = filter(f -> _trans_in_wn_range(basename(f), iso_slug, dataset_name, wn_range), all_trans)
   end
 
-  states = read_state_file(states_files[1], def)
-  for states_file in states_files[2:end]
-    append!(states, read_state_file(states_file, def))
-  end
+  states = _concat_states([read_state_file(f, def) for f in states_files])
 
   n_trans = get(get(get(def, "dataset", Dict()), "transitions", Dict()), "number_of_transitions", 0)
   # Only use n_trans as a per-file hint when loading the full unfiltered set;
@@ -150,6 +164,8 @@ of Q(T) as a function of temperature.
 
 # Returns
 - `LinearInterpolation`: Callable interpolant; evaluate with `itp(T)`.
+  Evaluating outside the tabulated temperature range throws an
+  extrapolation error; the range is `extrema(itp.t)`.
 """
 function read_pf_file(path)
   T_vals = Float64[]

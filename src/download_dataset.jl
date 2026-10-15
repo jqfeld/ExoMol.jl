@@ -386,8 +386,8 @@ end
 
 function _trans_in_wn_range(filename, isotopologue, dataset, wn_range)
   wn_min, wn_max = wn_range
-  filename == "$(isotopologue)__$(dataset).trans.bz2" && return true
-  m = match(r"__(\d+)-(\d+)\.trans\.bz2$", filename)
+  replace(filename, r"\.bz2$" => "") == "$(isotopologue)__$(dataset).trans" && return true
+  m = match(r"__(\d+)-(\d+)\.trans(\.bz2)?$", filename)
   if isnothing(m)
     @warn "Transition file '$filename' doesn't match a recognized wavenumber-range naming pattern; including it rather than risk silently dropping in-range data. Pass wn_range=nothing (or check the file directly) if you want to confirm its actual coverage."
     return true
