@@ -27,13 +27,29 @@ function _fortran_to_type(str)
 end
 
 
+# Case-insensitive "nan" check without allocating.
+function _is_nan_str(value)
+  t = strip(value)
+  ncodeunits(t) == 3 || return false
+  return all(((c, r),) -> lowercase(c) == r, zip(t, "nan"))
+end
+
 function _parse_field(type, value)
   type <: AbstractString && return String(value)
-  if lowercase(strip(value)) == "nan"
+  if _is_nan_str(value)
     type <: AbstractFloat && return type(NaN)
     type <: Integer       && return type(-2)  # ExoMol convention: -2 = not applicable
   end
   parse(type, value)
+end
+
+# Function barriers: compiled for the concrete column types, avoiding
+# per-field dynamic dispatch in the hot loops.
+_push_field!(col::Vector{T}, value) where {T} = push!(col, _parse_field(T, value))
+
+function _assemble_rows(::Type{NT}, cols::Tuple) where {NT}
+  isempty(cols) && return NT[]
+  return [NT(map(c -> c[k], cols)) for k in eachindex(cols[1])]
 end
 
 """
@@ -62,39 +78,37 @@ function read_state_file(filename, def=read_def_file(replace(filename, r"\.state
   end
 
   n = length(field_names)
-  split_lines = Vector{SubString{String}}[]
+  cols = Any[Vector{T}() for T in field_types]
+  # Rows holding "nan" in each integer column, so they become NaN rather than
+  # the -2 sentinel if the column is later promoted to Float64.
+  nan_rows = [Int[] for _ in 1:n]
 
-  # split(line) still allocates a Vector{SubString} per line. This can be
-  # eliminated by pre-computing fixed byte positions from the ffmt widths
-  # (e.g. "I12" → 12, "F12.6" → 12, "ES12.4" → 12, with 1-space separators)
-  # and replacing split with @view line[start:stop] slices — same approach
-  # used in read_trans_file. Deferred because states files are small relative
-  # to transition files, so the win is modest.
   _open_exomol_file(filename) do io
-    content = read(io, String)
-    for line in eachsplit(content, '\n')
-      isempty(line) && continue
+    for line in eachline(io)
+      isempty(strip(line)) && continue
       strings = split(line)
       length(strings) == n || error("Expected $n columns, got $(length(strings)) in: $line")
-      push!(split_lines, strings)
-      # Some datasets declare a Hund's-case quantum number (e.g. Sigma)
-      # as integer format even though it legitimately takes half-integer
-      # values for odd-multiplicity (doublet, quartet, ...) electronic
-      # states — promote such a field to Float64 rather than erroring,
-      # matching how the other float fields already handle "nan".
       for i in 1:n
+        # Some datasets declare a Hund's-case quantum number (e.g. Sigma)
+        # as integer format even though it legitimately takes half-integer
+        # values for odd-multiplicity (doublet, quartet, ...) electronic
+        # states — promote such a field to Float64 rather than erroring.
         if field_types[i] === Int && occursin('.', strings[i])
+          col = Vector{Float64}(cols[i])
+          col[nan_rows[i]] .= NaN
+          cols[i] = col
           field_types[i] = Float64
         end
+        if field_types[i] === Int && _is_nan_str(strings[i])
+          push!(nan_rows[i], length(cols[i]) + 1)
+        end
+        _push_field!(cols[i], strings[i])
       end
     end
   end
 
   NT = NamedTuple{Tuple(Symbol.(field_names)), Tuple{field_types...}}
-  states = Vector{NT}(undef, length(split_lines))
-  for (k, strings) in enumerate(split_lines)
-    states[k] = NT(ntuple(i -> _parse_field(field_types[i], strings[i]), n))
-  end
+  states = _assemble_rows(NT, Tuple(cols))
 
   return states
 end
