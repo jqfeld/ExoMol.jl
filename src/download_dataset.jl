@@ -10,13 +10,42 @@ function _human_bytes(n)
   return "$(round(n/1_000_000_000, digits=1)) GB"
 end
 
+# Base URLs of the ExoMol server and API. Refs so tests can point them at a
+# local fake server.
+const _EXOMOL_BASE = Ref("https://www.exomol.com")
+const _EXOMOL_API = Ref("https://exomol.com/api/")
+
+_db_url(path) = "$(_EXOMOL_BASE[])/db/$(path)"
+
+# File URLs from the ExoMol API usually lack a scheme
+# ("www.exomol.com/db/..."); accept full URLs as well.
+function _absolute_url(url)
+  occursin(r"^[a-z]+://", url) && return url
+  url = lstrip(url, '/')
+  startswith(url, "www.") && return "https://" * url
+  return "https://www." * url
+end
+
+# Download to a temporary name and rename on success, so an interrupted
+# download never leaves a truncated file that later looks cached.
+function _download_atomic(url, dest; kwargs...)
+  tmp = dest * ".part"
+  try
+    Downloads.download(url, tmp; kwargs...)
+  catch
+    rm(tmp; force=true)
+    rethrow()
+  end
+  mv(tmp, dest; force=true)
+end
+
 function _download_with_progress(url, dest; desc="", verbose=false)
   # A redrawn progress bar only makes sense on a terminal; in CI logs the
   # escape codes and per-chunk lines just flood the output.
-  stderr isa Base.TTY || return Downloads.download(url, dest; verbose)
+  stderr isa Base.TTY || return _download_atomic(url, dest; verbose)
   shown = Ref(false)
   last_draw = Ref(0.0)
-  Downloads.download(url, dest; verbose,
+  _download_atomic(url, dest; verbose,
     progress = (total, now) -> begin
       done = total > 0 && now >= total
       t = time()
@@ -63,6 +92,11 @@ Download a specific ExoMol dataset and store it locally.
   cache.
 - `verbose::Bool=false`: Forward verbose output to `Downloads.download`.
 
+Once all requested files are present, no network access is needed: the list of
+transition files and the broadening partners missing on the server are
+remembered in a `.exomol_manifest.json` file in the dataset directory.
+`force=true` refreshes it.
+
 # Returns
 - `String`: Path to the directory containing the downloaded files
   (`.def.json`, `.states.bz2`, `.pf`, `.broad`, and `.trans.bz2` files).
@@ -77,28 +111,46 @@ function get_exomol_dataset(molecule, isotopologue, dataset;
   else
     dataset_dir = dest
   end
+  mkpath(dataset_dir)
   def_path = joinpath(dataset_dir, _data_filename(isotopologue, dataset, "def.json"))
+  states_path = joinpath(dataset_dir, _data_filename(isotopologue, dataset, "states.bz2"))
+  pf_path = joinpath(dataset_dir, _data_filename(isotopologue, dataset, "pf"))
 
+  # Each file is checked on its own: a failed states download must not be
+  # masked by an already present .def.json.
   if !isfile(def_path) || force
-    mkpath(dataset_dir)
     @info "Downloading $molecule/$isotopologue/$dataset..."
-    Downloads.download(_data_url(molecule, isotopologue, dataset, "def.json"), def_path; verbose)
-    _download_with_progress(
-      _data_url(molecule, isotopologue, dataset, "states.bz2"),
-      joinpath(dataset_dir, _data_filename(isotopologue, dataset, "states.bz2"));
+    _download_atomic(_data_url(molecule, isotopologue, dataset, "def.json"), def_path; verbose)
+  end
+  if !isfile(states_path) || force
+    _download_with_progress(_data_url(molecule, isotopologue, dataset, "states.bz2"), states_path;
       desc="  States:", verbose)
   end
-
-  pf_path = joinpath(dataset_dir, _data_filename(isotopologue, dataset, "pf"))
   if !isfile(pf_path) || force
-    Downloads.download(_data_url(molecule, isotopologue, dataset, "pf"), pf_path; verbose)
+    _download_atomic(_data_url(molecule, isotopologue, dataset, "pf"), pf_path; verbose)
     @info "Obtained partition function file"
   end
 
-  def = JSON.parsefile(def_path)
-  _download_broad_files(molecule, isotopologue, dataset_dir, def; force, verbose)
+  # The manifest remembers the transition file list and the broadening
+  # partners the server has no file for, so a fully cached dataset loads
+  # without touching the network.
+  manifest_path = joinpath(dataset_dir, _MANIFEST_FILENAME)
+  manifest = (!force && isfile(manifest_path)) ? JSON.parsefile(manifest_path) : Dict{String,Any}()
 
-  trans_files = _fetch_trans_urls(molecule, isotopologue, dataset; wn_range, _response)
+  def = JSON.parsefile(def_path)
+  broad_missing = _download_broad_files(molecule, isotopologue, dataset_dir, def;
+    force, verbose, skip=get(manifest, "broad_missing", String[]))
+
+  all_trans = if haskey(manifest, "trans_files")
+    [(url=f["url"], size=get(f, "size", nothing)) for f in manifest["trans_files"]]
+  else
+    response = isnothing(_response) ? _fetch_linelist_api(molecule) : _response
+    _trans_files_from_response(response, isotopologue, dataset)
+  end
+  _write_manifest(manifest_path, all_trans, broad_missing)
+
+  trans_files = isnothing(wn_range) ? all_trans :
+    filter(t -> _trans_in_wn_range(basename(t.url), isotopologue, dataset, wn_range), all_trans)
   pending = force ? trans_files : filter(t -> !isfile(joinpath(dataset_dir, basename(t.url))), trans_files)
 
   if isempty(pending)
@@ -110,7 +162,7 @@ function get_exomol_dataset(molecule, isotopologue, dataset;
     @info "Downloading $n transition file(s)$size_str..."
     for (i, t) in enumerate(pending)
       fname = basename(t.url)
-      _download_with_progress("https://www." * t.url, joinpath(dataset_dir, fname);
+      _download_with_progress(_absolute_url(t.url), joinpath(dataset_dir, fname);
         desc="  [$i/$n] $fname:", verbose)
     end
   end
@@ -154,6 +206,7 @@ function save_dataset(destination, molecule, isotopologue, dataset; force=false)
 
   mkpath(destination)
   for filename in readdir(src)
+    endswith(filename, ".part") && continue
     dst_file = joinpath(destination, filename)
     if !isfile(dst_file) || force
       cp(joinpath(src, filename), dst_file; force)
@@ -162,29 +215,45 @@ function save_dataset(destination, molecule, isotopologue, dataset; force=false)
   return destination
 end
 
-_data_url(molecule, isotopologue, dataset, type) = "https://www.exomol.com/db/$(molecule)/$(isotopologue)/$(dataset)/$(isotopologue)__$(dataset).$(type)"
+_data_url(molecule, isotopologue, dataset, type) = _db_url("$(molecule)/$(isotopologue)/$(dataset)/$(isotopologue)__$(dataset).$(type)")
 _data_filename(isotopologue, dataset, type) = "$(isotopologue)__$(dataset).$(type)"
+
+const _MANIFEST_FILENAME = ".exomol_manifest.json"
+
+function _write_manifest(path, trans_files, broad_missing)
+  manifest = Dict(
+    "trans_files" => [Dict("url" => t.url, "size" => t.size) for t in trans_files],
+    "broad_missing" => sort!(collect(broad_missing)),
+  )
+  tmp = path * ".part"
+  write(tmp, JSON.json(manifest))
+  mv(tmp, path; force=true)
+end
 
 function _fetch_linelist_api(molecule)
   buf = IOBuffer()
-  Downloads.download("https://exomol.com/api/?molecule=$(molecule)&datatype=linelist", buf)
+  Downloads.download("$(_EXOMOL_API[])?molecule=$(molecule)&datatype=linelist", buf)
   JSON.parse(String(take!(buf)))
 end
 
-function _fetch_trans_urls(molecule, isotopologue, dataset; wn_range=nothing, _response=nothing)
-  response = isnothing(_response) ? _fetch_linelist_api(molecule) : _response
-
+function _trans_files_from_response(response, isotopologue, dataset)
   for (_, iso_data) in response
     !haskey(iso_data, "linelist") && continue
     !haskey(iso_data["linelist"], dataset) && continue
     files = iso_data["linelist"][dataset]["files"]
     any(f -> occursin("/$(isotopologue)/", f["url"]), files) || continue
     trans = filter(f -> endswith(f["url"], ".trans.bz2"), files)
-    isnothing(wn_range) && return [(url=f["url"], size=get(f, "size", nothing)) for f in trans]
-    return [(url=f["url"], size=get(f, "size", nothing)) for f in trans if _trans_in_wn_range(basename(f["url"]), isotopologue, dataset, wn_range)]
+    return [(url=f["url"], size=get(f, "size", nothing)) for f in trans]
   end
 
   error("Dataset $(dataset) for isotopologue $(isotopologue) not found in ExoMol API")
+end
+
+function _fetch_trans_urls(molecule, isotopologue, dataset; wn_range=nothing, _response=nothing)
+  response = isnothing(_response) ? _fetch_linelist_api(molecule) : _response
+  trans = _trans_files_from_response(response, isotopologue, dataset)
+  isnothing(wn_range) && return trans
+  return filter(t -> _trans_in_wn_range(basename(t.url), isotopologue, dataset, wn_range), trans)
 end
 
 function _recommended_dataset(molecule, isotopologue)
@@ -216,7 +285,9 @@ const _EXOMOL_BROADENING_PARTNERS = [
   "air", "self", "H2", "He", "Ar", "CH4", "CO", "CO2", "H2O", "N2", "NH3", "NO", "O2", "CS",
 ]
 
-function _download_broad_files(molecule, iso_slug, dest_dir, def; force=false, verbose=false)
+# Returns the probed partners the server has no file for (including those in
+# `skip`, which are not probed again).
+function _download_broad_files(molecule, iso_slug, dest_dir, def; force=false, verbose=false, skip=())
   advertised = Set{String}()
   for (_, broad_info) in get(def, "broad", Dict())
     isa(broad_info, AbstractDict) || continue
@@ -224,28 +295,35 @@ function _download_broad_files(molecule, iso_slug, dest_dir, def; force=false, v
     push!(advertised, filename)
     broad_path = joinpath(dest_dir, filename)
     if !isfile(broad_path) || force
-      Downloads.download(
-        "https://www.exomol.com/db/$(molecule)/$(iso_slug)/$(filename)",
-        broad_path; verbose)
+      _download_atomic(_db_url("$(molecule)/$(iso_slug)/$(filename)"), broad_path; verbose)
       @info "Obtained broadening file: $filename"
     end
   end
 
+  missing_partners = String[]
   for partner in _EXOMOL_BROADENING_PARTNERS
     filename = "$(iso_slug)__$(partner).broad"
     filename in advertised && continue
     broad_path = joinpath(dest_dir, filename)
     (!force && isfile(broad_path)) && continue
+    if !force && partner in skip
+      push!(missing_partners, partner)
+      continue
+    end
     try
-      Downloads.download(
-        "https://www.exomol.com/db/$(molecule)/$(iso_slug)/$(filename)",
-        broad_path; verbose)
+      _download_atomic(_db_url("$(molecule)/$(iso_slug)/$(filename)"), broad_path; verbose)
       @info "Obtained broadening file: $filename"
     catch e
       e isa Downloads.RequestError || rethrow()
+      # Only remember genuine "not found"; a transient error is retried next time.
+      _is_not_found(e) && push!(missing_partners, partner)
     end
   end
+  return missing_partners
 end
+
+# HTTP 404, or curl's "couldn't read file" for file:// URLs.
+_is_not_found(e::Downloads.RequestError) = e.response.status == 404 || e.code == 37
 
 function _find_cached_def(molecule, iso_slug)
   datasets_dir = @get_scratch!("exomol_datasets")
@@ -275,10 +353,9 @@ function _fetch_def_for_iso(molecule, iso_slug, response)
   isnothing(best_ds) && return nothing
   buf = IOBuffer()
   try
-    Downloads.download(
-      "https://www.exomol.com/db/$(molecule)/$(iso_slug)/$(best_ds)/$(iso_slug)__$(best_ds).def.json",
-      buf)
-  catch
+    Downloads.download(_data_url(molecule, iso_slug, best_ds, "def.json"), buf)
+  catch e
+    e isa Downloads.RequestError || rethrow()
     return nothing
   end
   return JSON.parse(String(take!(buf)))

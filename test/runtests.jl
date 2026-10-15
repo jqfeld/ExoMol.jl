@@ -8,6 +8,7 @@ const NETWORK = get(ENV, "EXOMOL_TEST_NETWORK", "true") != "false"
 @testset "ExoMol.jl" begin
   @safetestset "Aqua quality assurance" begin include("aqua_tests.jl") end
   @safetestset "Parser tests" begin include("parser_tests.jl") end
+  @safetestset "Offline download tests" begin include("offline_download_tests.jl") end
   if NETWORK
     @safetestset "Download tests" begin include("download_tests.jl") end
     @safetestset "Isotopologue tests" begin include("isotopologue_tests.jl") end

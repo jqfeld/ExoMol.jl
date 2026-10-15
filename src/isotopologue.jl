@@ -57,6 +57,7 @@ function load_isotopologue(folder::AbstractString; wn_range=nothing)
   isnothing(def_idx) && error("No .def.json file found in $folder")
   def_file = files[def_idx]
   states_files = files[findall(endswith(r".states(.bz2|$)"), files)]
+  isempty(states_files) && error("No .states file found in $folder")
   pf_files = files[findall(endswith(".pf"), files)]
 
   def = read_def_file(def_file)
